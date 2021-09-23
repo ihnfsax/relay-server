@@ -1,0 +1,5 @@
+src/build/
+src/.vscode/
+src/.clang-format
+src/.VSCodeCounter/
+!.gitignore
