@@ -1,5 +1,11 @@
-#include <iostream>
+#include "RelayServer.hpp"
 
-int main(int, char**) {
-    std::cout << "Hello, world!\n";
+int main(int argc, char** argv) {
+    if (argc != 3) {
+        printf("usage: RelayServer <IP_Address> <Port>\n");
+        return 0;
+    }
+    RelayServer server;
+    server.start(argv[1], argv[2], 1);
+    return 0;
 }
