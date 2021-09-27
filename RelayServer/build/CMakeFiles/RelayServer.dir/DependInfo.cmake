@@ -4,10 +4,10 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_CXX
-  "/home/zeus/develop/c_workspace/UNP/RelayServer/src/Client.cpp" "/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles/RelayServer.dir/Client.cpp.o"
-  "/home/zeus/develop/c_workspace/UNP/RelayServer/src/RelayServer.cpp" "/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles/RelayServer.dir/RelayServer.cpp.o"
-  "/home/zeus/develop/c_workspace/UNP/RelayServer/src/common.cpp" "/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles/RelayServer.dir/common.cpp.o"
-  "/home/zeus/develop/c_workspace/UNP/RelayServer/src/main.cpp" "/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles/RelayServer.dir/main.cpp.o"
+  "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/Client.cpp" "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles/RelayServer.dir/Client.cpp.o"
+  "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.cpp" "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles/RelayServer.dir/RelayServer.cpp.o"
+  "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.cpp" "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles/RelayServer.dir/common.cpp.o"
+  "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/main.cpp" "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles/RelayServer.dir/main.cpp.o"
   )
 set(CMAKE_CXX_COMPILER_ID "GNU")
 

@@ -4,8 +4,8 @@
 
 
 # Configuration directories and files
-SourceDirectory: /home/zeus/develop/c_workspace/UNP/RelayServer/src
-BuildDirectory: /home/zeus/develop/c_workspace/UNP/RelayServer/src/build
+SourceDirectory: /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer
+BuildDirectory: /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build
 
 # Where to place the cost data store
 CostDataFile: 
@@ -26,7 +26,7 @@ SubmitURL: http://
 NightlyStartTime: 00:00:00 EDT
 
 # Commands for the build/test/submit cycle
-ConfigureCommand: "/usr/bin/cmake" "/home/zeus/develop/c_workspace/UNP/RelayServer/src"
+ConfigureCommand: "/usr/bin/cmake" "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer"
 MakeCommand: /usr/bin/cmake --build . --config "${CTEST_CONFIGURATION_TYPE}" -- -i
 DefaultCTestConfigurationType: Release
 

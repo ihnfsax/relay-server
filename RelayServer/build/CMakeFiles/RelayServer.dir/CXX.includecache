@@ -6,19 +6,25 @@
 
 #IncludeRegexTransform: 
 
-/home/zeus/develop/c_workspace/UNP/RelayServer/src/RelayServer.cpp
-RelayServer.hpp
-/home/zeus/develop/c_workspace/UNP/RelayServer/src/RelayServer.hpp
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/Client.cpp
 
-/home/zeus/develop/c_workspace/UNP/RelayServer/src/RelayServer.hpp
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.cpp
+RelayServer.hpp
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.hpp
+
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.hpp
 common.hpp
-/home/zeus/develop/c_workspace/UNP/RelayServer/src/common.hpp
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.hpp
 map
 -
 string
 -
 
-/home/zeus/develop/c_workspace/UNP/RelayServer/src/common.hpp
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.cpp
+common.hpp
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.hpp
+
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.hpp
 arpa/inet.h
 -
 assert.h
@@ -55,4 +61,8 @@ unistd.h
 -
 wait.h
 -
+
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/main.cpp
+RelayServer.hpp
+/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.hpp
 

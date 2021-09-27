@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/zeus/develop/c_workspace/UNP/RelayServer/src
+CMAKE_SOURCE_DIR = /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/zeus/develop/c_workspace/UNP/RelayServer/src/build
+CMAKE_BINARY_DIR = /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/RelayServer.dir/depend.make
@@ -59,55 +59,55 @@ include CMakeFiles/RelayServer.dir/flags.make
 
 CMakeFiles/RelayServer.dir/Client.cpp.o: CMakeFiles/RelayServer.dir/flags.make
 CMakeFiles/RelayServer.dir/Client.cpp.o: ../Client.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/RelayServer.dir/Client.cpp.o"
-	/bin/x86_64-linux-gnu-g++-9  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/RelayServer.dir/Client.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/src/Client.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/RelayServer.dir/Client.cpp.o"
+	/bin/x86_64-linux-gnu-g++-9  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/RelayServer.dir/Client.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/Client.cpp
 
 CMakeFiles/RelayServer.dir/Client.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/RelayServer.dir/Client.cpp.i"
-	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zeus/develop/c_workspace/UNP/RelayServer/src/Client.cpp > CMakeFiles/RelayServer.dir/Client.cpp.i
+	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/Client.cpp > CMakeFiles/RelayServer.dir/Client.cpp.i
 
 CMakeFiles/RelayServer.dir/Client.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/RelayServer.dir/Client.cpp.s"
-	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zeus/develop/c_workspace/UNP/RelayServer/src/Client.cpp -o CMakeFiles/RelayServer.dir/Client.cpp.s
+	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/Client.cpp -o CMakeFiles/RelayServer.dir/Client.cpp.s
 
 CMakeFiles/RelayServer.dir/RelayServer.cpp.o: CMakeFiles/RelayServer.dir/flags.make
 CMakeFiles/RelayServer.dir/RelayServer.cpp.o: ../RelayServer.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/RelayServer.dir/RelayServer.cpp.o"
-	/bin/x86_64-linux-gnu-g++-9  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/RelayServer.dir/RelayServer.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/src/RelayServer.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/RelayServer.dir/RelayServer.cpp.o"
+	/bin/x86_64-linux-gnu-g++-9  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/RelayServer.dir/RelayServer.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.cpp
 
 CMakeFiles/RelayServer.dir/RelayServer.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/RelayServer.dir/RelayServer.cpp.i"
-	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zeus/develop/c_workspace/UNP/RelayServer/src/RelayServer.cpp > CMakeFiles/RelayServer.dir/RelayServer.cpp.i
+	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.cpp > CMakeFiles/RelayServer.dir/RelayServer.cpp.i
 
 CMakeFiles/RelayServer.dir/RelayServer.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/RelayServer.dir/RelayServer.cpp.s"
-	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zeus/develop/c_workspace/UNP/RelayServer/src/RelayServer.cpp -o CMakeFiles/RelayServer.dir/RelayServer.cpp.s
+	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.cpp -o CMakeFiles/RelayServer.dir/RelayServer.cpp.s
 
 CMakeFiles/RelayServer.dir/common.cpp.o: CMakeFiles/RelayServer.dir/flags.make
 CMakeFiles/RelayServer.dir/common.cpp.o: ../common.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/RelayServer.dir/common.cpp.o"
-	/bin/x86_64-linux-gnu-g++-9  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/RelayServer.dir/common.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/src/common.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/RelayServer.dir/common.cpp.o"
+	/bin/x86_64-linux-gnu-g++-9  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/RelayServer.dir/common.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.cpp
 
 CMakeFiles/RelayServer.dir/common.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/RelayServer.dir/common.cpp.i"
-	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zeus/develop/c_workspace/UNP/RelayServer/src/common.cpp > CMakeFiles/RelayServer.dir/common.cpp.i
+	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.cpp > CMakeFiles/RelayServer.dir/common.cpp.i
 
 CMakeFiles/RelayServer.dir/common.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/RelayServer.dir/common.cpp.s"
-	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zeus/develop/c_workspace/UNP/RelayServer/src/common.cpp -o CMakeFiles/RelayServer.dir/common.cpp.s
+	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.cpp -o CMakeFiles/RelayServer.dir/common.cpp.s
 
 CMakeFiles/RelayServer.dir/main.cpp.o: CMakeFiles/RelayServer.dir/flags.make
 CMakeFiles/RelayServer.dir/main.cpp.o: ../main.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/RelayServer.dir/main.cpp.o"
-	/bin/x86_64-linux-gnu-g++-9  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/RelayServer.dir/main.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/src/main.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/RelayServer.dir/main.cpp.o"
+	/bin/x86_64-linux-gnu-g++-9  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/RelayServer.dir/main.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/main.cpp
 
 CMakeFiles/RelayServer.dir/main.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/RelayServer.dir/main.cpp.i"
-	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zeus/develop/c_workspace/UNP/RelayServer/src/main.cpp > CMakeFiles/RelayServer.dir/main.cpp.i
+	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/main.cpp > CMakeFiles/RelayServer.dir/main.cpp.i
 
 CMakeFiles/RelayServer.dir/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/RelayServer.dir/main.cpp.s"
-	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zeus/develop/c_workspace/UNP/RelayServer/src/main.cpp -o CMakeFiles/RelayServer.dir/main.cpp.s
+	/bin/x86_64-linux-gnu-g++-9 $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/main.cpp -o CMakeFiles/RelayServer.dir/main.cpp.s
 
 # Object files for target RelayServer
 RelayServer_OBJECTS = \
@@ -125,7 +125,7 @@ RelayServer: CMakeFiles/RelayServer.dir/common.cpp.o
 RelayServer: CMakeFiles/RelayServer.dir/main.cpp.o
 RelayServer: CMakeFiles/RelayServer.dir/build.make
 RelayServer: CMakeFiles/RelayServer.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable RelayServer"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable RelayServer"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/RelayServer.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -138,6 +138,6 @@ CMakeFiles/RelayServer.dir/clean:
 .PHONY : CMakeFiles/RelayServer.dir/clean
 
 CMakeFiles/RelayServer.dir/depend:
-	cd /home/zeus/develop/c_workspace/UNP/RelayServer/src/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/zeus/develop/c_workspace/UNP/RelayServer/src /home/zeus/develop/c_workspace/UNP/RelayServer/src /home/zeus/develop/c_workspace/UNP/RelayServer/src/build /home/zeus/develop/c_workspace/UNP/RelayServer/src/build /home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles/RelayServer.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles/RelayServer.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/RelayServer.dir/depend
 

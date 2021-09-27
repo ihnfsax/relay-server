@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/zeus/develop/c_workspace/UNP/RelayServer/src
+CMAKE_SOURCE_DIR = /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/zeus/develop/c_workspace/UNP/RelayServer/src/build
+CMAKE_BINARY_DIR = /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build
 
 # Utility rule file for Experimental.
 
@@ -71,6 +71,6 @@ CMakeFiles/Experimental.dir/clean:
 .PHONY : CMakeFiles/Experimental.dir/clean
 
 CMakeFiles/Experimental.dir/depend:
-	cd /home/zeus/develop/c_workspace/UNP/RelayServer/src/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/zeus/develop/c_workspace/UNP/RelayServer/src /home/zeus/develop/c_workspace/UNP/RelayServer/src /home/zeus/develop/c_workspace/UNP/RelayServer/src/build /home/zeus/develop/c_workspace/UNP/RelayServer/src/build /home/zeus/develop/c_workspace/UNP/RelayServer/src/build/CMakeFiles/Experimental.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build/CMakeFiles/Experimental.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/Experimental.dir/depend
 
