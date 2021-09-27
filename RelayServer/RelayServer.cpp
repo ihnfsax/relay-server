@@ -1,4 +1,5 @@
 #include "RelayServer.hpp"
+#include <vector>
 
 int RelayServer::start(std::string ip, std::string port, int logFlag) {
     return start(ip.c_str(), port.c_str(), logFlag);
@@ -26,6 +27,7 @@ int RelayServer::start(const char* ip, const char* port, int logFlag) {
         printf("No log file specified.\n");
     }
     int r = doit(ip, port);
+    logInfo(0, logfp, "[SERVER] Server shutdown");
     if (logfp != nullptr) {
         fclose(logfp);
         logfp = nullptr;
@@ -81,8 +83,9 @@ int RelayServer::doit(const char* ip, const char* port) {
     while (1) {
         int ready = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
         if (ready < 0) {
-            // TODO
-            return logError(-1, logfp, "[SERVER] epoll_wait error");
+            logError(-1, logfp, "[SERVER] epoll_wait error");
+            closeServer();
+            return close(listenfd);
         }
         handle_events(events, ready);
     }
@@ -158,7 +161,14 @@ void RelayServer::handle_events(struct epoll_event* events, const int& number) {
     }
 }
 
-void RelayServer::closeServer() {}
+void RelayServer::closeServer() {
+    std::vector<int> connfds;
+    for (auto const& cli : clientFDs)
+        connfds.push_back(cli.first);
+    for (auto const& connfd : connfds)
+        removeClient(connfd);
+    logInfo(0, logfp, "[SERVER] All connected sockets have been closed");
+}
 
 int RelayServer::addClient(clientInfo* client) {
     client->cliID = nextID;
