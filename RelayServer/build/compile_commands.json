@@ -1,0 +1,22 @@
+[
+{
+  "directory": "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build",
+  "command": "/bin/x86_64-linux-gnu-g++-9    -g   -g -o CMakeFiles/RelayServer.dir/Client.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/Client.cpp",
+  "file": "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/Client.cpp"
+},
+{
+  "directory": "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build",
+  "command": "/bin/x86_64-linux-gnu-g++-9    -g   -g -o CMakeFiles/RelayServer.dir/RelayServer.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.cpp",
+  "file": "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/RelayServer.cpp"
+},
+{
+  "directory": "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build",
+  "command": "/bin/x86_64-linux-gnu-g++-9    -g   -g -o CMakeFiles/RelayServer.dir/common.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.cpp",
+  "file": "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/common.cpp"
+},
+{
+  "directory": "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/build",
+  "command": "/bin/x86_64-linux-gnu-g++-9    -g   -g -o CMakeFiles/RelayServer.dir/main.cpp.o -c /home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/main.cpp",
+  "file": "/home/zeus/develop/c_workspace/UNP/RelayServer/RelayServer/main.cpp"
+}
+]

@@ -1,0 +1,1 @@
+/bin/x86_64-linux-gnu-g++-9  -g  -rdynamic CMakeFiles/RelayServer.dir/Client.cpp.o CMakeFiles/RelayServer.dir/RelayServer.cpp.o CMakeFiles/RelayServer.dir/common.cpp.o CMakeFiles/RelayServer.dir/main.cpp.o  -o RelayServer 
