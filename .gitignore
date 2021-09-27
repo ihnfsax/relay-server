@@ -1,5 +1,9 @@
-src/build/
-src/.vscode/
-src/.clang-format
-src/.VSCodeCounter/
+RelayServer/build/
+RelayServer/.vscode/
+RelayServer/.clang-format
+RelayServer/.VSCodeCounter/
+PressureGenerator/build/
+PressureGenerator/.vscode/
+PressureGenerator/.clang-format
+PressureGenerator/.VSCodeCounter/
 !.gitignore
