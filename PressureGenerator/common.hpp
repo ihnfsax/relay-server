@@ -54,8 +54,11 @@ int setPort(const char* strptr, in_port_t* addrptr, FILE* fp = nullptr);
 /* 将文件描述符设置为非阻塞 */
 int setnonblocking(int fd);
 
+/* 将文件描述符设置为阻塞 */
+int setblocking(int fd);
+
 /* 将文件描述符fd上的EPOLLIN注册到epollfd指示的epoll内核事件表中，参数enable_et指定是否对fd启用ET模式 */
-void addfd(int epollfd, int fd, int enable_et);
+void addfd(int epollfd, int fd, int enable_out, int enable_et);
 
 /* 将文件描述符从epoll事件表中删除 */
 void delfd(int epollfd, int fd);

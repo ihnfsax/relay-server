@@ -4,7 +4,7 @@ project(RelayServer VERSION 0.1.0)
 include(CTest)
 enable_testing()
 
-add_compile_options(-g)
+add_compile_options(-g -Wall)
 aux_source_directory(. DIRSRCS)
 add_executable(RelayServer ${DIRSRCS})
 

@@ -82,15 +82,24 @@ int setnonblocking(int fd) {
     return old_option;
 }
 
-void addfd(int epollfd, int fd, int enable_et) {
+int setblocking(int fd) {
+    int old_option = fcntl(fd, F_GETFL);
+    int new_option = old_option & (~O_NONBLOCK);
+    fcntl(fd, F_SETFL, new_option);
+    return old_option;
+}
+
+void addfd(int epollfd, int fd, int enable_out, int enable_et) {
     struct epoll_event event;
     event.data.fd = fd;
     event.events  = EPOLLIN;
+    if (enable_out) {
+        event.events |= EPOLLOUT;
+    }
     if (enable_et) {
         event.events |= EPOLLET;
     }
     epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
-    // setnonblocking(fd);
 }
 
 void delfd(int epollfd, int fd) {

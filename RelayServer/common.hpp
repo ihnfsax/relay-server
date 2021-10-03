@@ -20,7 +20,6 @@
 #define NAME_MAX 255                                       /* chars in a file name */
 #define LINE_MAX 255                                       /* char in one line of log file */
 #define MAX_EVENT_NUMBER 30000                             /* 事件数 */
-#define BUFFER_SIZE 2048                                   /* 服务器接收缓冲区大小 */
 #define counterPart(self) (self % 2 ? self - 1 : self + 1) /* 得到对端客户端ID */
 
 /* 报文头结构 */
@@ -54,8 +53,11 @@ int setPort(const char* strptr, in_port_t* addrptr, FILE* fp = nullptr);
 /* 将文件描述符设置为非阻塞 */
 int setnonblocking(int fd);
 
+/* 将文件描述符设置为阻塞 */
+int setblocking(int fd);
+
 /* 将文件描述符fd上的EPOLLIN注册到epollfd指示的epoll内核事件表中，参数enable_et指定是否对fd启用ET模式 */
-void addfd(int epollfd, int fd, int enable_et);
+void addfd(int epollfd, int fd, int enable_out, int enable_et);
 
 /* 将文件描述符从epoll事件表中删除 */
 void delfd(int epollfd, int fd);

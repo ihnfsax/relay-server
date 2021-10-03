@@ -1,10 +1,6 @@
 #include "RelayServer.hpp"
 #include <vector>
 
-int RelayServer::start(std::string ip, std::string port, int logFlag) {
-    return start(ip.c_str(), port.c_str(), logFlag);
-}
-
 int RelayServer::start(const char* ip, const char* port, int logFlag) {
     if (status != 0) {
         printf("This Server has been started.\n");
@@ -53,7 +49,7 @@ int RelayServer::doit(const char* ip, const char* port) {
     /* 设置套接字选项 */
     int reuse = 1;
     if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEPORT, (const void*)&reuse, sizeof(int)) < 0) {
-        logError(-1, logfp, "[LOG] setsockopt error");
+        logError(-1, logfp, "setsockopt error");
         close(listenfd);
         return -1;
     }
@@ -78,7 +74,8 @@ int RelayServer::doit(const char* ip, const char* port) {
     logInfo(0, logfp, "[SERVER] Relay server begin to listen", ip, port);
 
     /* 添加监听套接字到epoll事件表 */
-    addfd(epollfd, listenfd, 0);
+    addfd(epollfd, listenfd, 0, 0);
+    setnonblocking(listenfd);
 
     while (1) {
         int ready = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
@@ -87,78 +84,167 @@ int RelayServer::doit(const char* ip, const char* port) {
             closeServer();
             return close(listenfd);
         }
-        handle_events(events, ready);
+        /* 处理事件 */
+        if (handle_events(events, ready) < 0) {
+            closeServer();
+            return close(listenfd);
+        }
     }
 
     return close(listenfd);
 }
 
-void RelayServer::handle_events(struct epoll_event* events, const int& number) {
-    char buf[BUFFER_SIZE];
-    buf[BUFFER_SIZE - 1] = '\0';
+int RelayServer::handle_events(struct epoll_event* events, const int& number) {
     for (int i = 0; i < number; ++i) {
         int sockfd = events[i].data.fd;
         /* 监听套接字 */
         if (sockfd == listenfd) {
             struct sockaddr_in cliAddr;
             socklen_t          cliAddrLen;
-            clientInfo*        client = new clientInfo;
-            client->connfd            = accept(listenfd, (struct sockaddr*)&cliAddr, &cliAddrLen);
-            if (client->connfd == -1 && errno == EINTR) {
-                delete client;
-                continue;
+            int                connfd = accept(listenfd, (struct sockaddr*)&cliAddr, &cliAddrLen);
+            if (connfd < 0) {
+                if (errno == EWOULDBLOCK || errno == ECONNABORTED || errno == EPROTO || errno == EINTR)
+                    continue;
+                else
+                    return logError(-1, logfp, "[SERVER] Unexpected error on accept");
             }
-            if (setTimeout(sockfd) < 0) {
-                delete client;
-                continue;
-            }
+            ClientInfo* client = new ClientInfo;
+            client->connfd     = connfd;
             addClient(client);
-            if (sendSavedMsgToClient(client->connfd, client->cliID) == -1) {
-                logInfo(-1, logfp, "[CLIENT] Failed to send saved message to client %d", recvID);
-                removeClient(sockfd);
-            }
         }
         /* 已连接套接字 */
-        else if (events[i].events & EPOLLIN) {
-            assert(clientFDs.find(sockfd) != clientFDs.end());
-            recvID = clientFDs[sockfd]->cliID;
-            assert(clientIDs.find(recvID) != clientIDs.end());
-            sendID        = counterPart(recvID);
-            size_t bufLen = 0;
-            Header header;
-            if (recvFromClient(sockfd, &header, hSize) < 0) {
-                removeClient(sockfd);
-                continue;
-            }
-            else {
-                int msgLen = ntohs(header.length);
-                if (msgLen > BUFFER_SIZE - hSize || msgLen <= 0) {
-                    logInfo(-1, logfp, "[CLIENT] Client %d send message exceeding the limit size", recvID);
-                    removeClient(sockfd);
-                    continue;
-                }
-                else {
-                    if (recvFromClient(sockfd, buf + hSize, msgLen) < 0) {
+        else {
+            /* 有数据可读 */
+            if (events[i].events & EPOLLIN) {
+                assert(clientFDs.find(sockfd) != clientFDs.end());
+                int         srcID     = clientFDs[sockfd]->cliID;
+                ClientInfo* srcClient = clientIDs[srcID];
+                assert(clientIDs.find(srcID) != clientIDs.end());
+                int desID = counterPart(srcID);
+                /* 接收头部 */
+                if (clientFDs[sockfd]->recvStatus == 0) {
+                    assert(srcClient->unrecv != 0);
+                    ssize_t n = recv(sockfd, srcClient->recvPtr, srcClient->unrecv, 0);
+                    if (n == srcClient->unrecv) { /* 接收完毕 */
+                        Header header;
+                        memcpy(&header, srcClient->recvBuf, sizeof(Header));
+                        size_t msgLen = (size_t)ntohs(header.length);
+                        if (msgLen <= RECVBUF_MAX && msgLen > 0) {
+                            srcClient->recvPtr    = srcClient->recvBuf;
+                            srcClient->unrecv     = msgLen;
+                            srcClient->recvStatus = 1;
+                        }
+                        else if (msgLen == 0) {
+                            srcClient->recvPtr    = srcClient->recvBuf;
+                            srcClient->unrecv     = sizeof(Header);
+                            srcClient->recvStatus = 0;
+                        }
+                        else {
+                            logInfo(-1, logfp, "[SRC_CLIENT%d] Message length is larger than the receive buffer size",
+                                    srcID);
+                            removeClient(sockfd);
+                            continue;
+                        }
+                    }
+                    else if (n > 0 && n < srcClient->unrecv) { /* 接收了一部分 */
+                        srcClient->recvPtr += n;
+                        srcClient->unrecv -= n;
+                    }
+                    else if (n == 0) { /* 遇到FIN */
+                        logInfo(-1, logfp, "[SRC_CLIENT%d] Client sended FIN", srcID);
                         removeClient(sockfd);
                         continue;
                     }
-                    else {
-                        if (clientIDs.find(sendID) != clientIDs.end()) {
-                            int sendfd = clientIDs[sendID]->connfd;
-                            memcpy(buf, &header, hSize);
-                            if (sendToClient(sendfd, buf, msgLen + hSize) < 0) {
-                                removeClient(sendfd);
-                                continue;
+                    else { /* 遇到错误 */
+                        if (errno != EWOULDBLOCK) {
+                            logError(-1, logfp, "[SRC_CLIENT%d] Unexpected error on recv", srcID);
+                            removeClient(sockfd);
+                            continue;
+                        }
+                    }
+                } /* 接收载荷 */
+                if (clientFDs[sockfd]->recvStatus != 0) {
+                    assert(srcClient->unrecv != 0);
+                    ssize_t n = recv(sockfd, srcClient->recvPtr, srcClient->unrecv, 0);
+                    if (n == srcClient->unrecv) { /* 接收完毕 */
+                        size_t msgLen = (srcClient->recvPtr - srcClient->recvBuf) + n;
+                        /* 如果另一端存在，则复制数据 */
+                        if (clientIDs.find(desID) != clientIDs.end()) {
+                            ClientInfo* desClient = clientIDs[desID];
+                            if (SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf) > sizeof(Header) + msgLen) {
+                                Header header;
+                                header.length = htons((uint16_t)msgLen);
+                                memcpy(desClient->sendPtr, &header, sizeof(Header));
+                                desClient->sendPtr += sizeof(Header);
+                                memcpy(desClient->sendPtr, srcClient->recvBuf, msgLen);
+                                desClient->sendPtr += msgLen;
+                            }
+                            else {
+                                logInfo(-1, logfp, "[DES_CLIENT%d] Insufficient available send buffer space");
+                                /* 丢弃报文 */
                             }
                         }
+                        /* 否则将数据保存在文件 */
                         else {
-                            writeMsgToFile(sendID, buf + hSize, msgLen - 1);
+                            writeMsgToFile(desID, srcClient->recvBuf, msgLen - 1);
+                        }
+                        /* 设置状态以接收新的报文 */
+                        srcClient->recvPtr    = srcClient->recvBuf;
+                        srcClient->unrecv     = sizeof(Header);
+                        srcClient->recvStatus = 0;
+                    }
+                    else if (n > 0 && n < srcClient->unrecv) { /* 接收了一部分 */
+                        srcClient->recvPtr += n;
+                        srcClient->unrecv -= n;
+                    }
+                    else if (n == 0) { /* 遇到FIN */
+                        logInfo(-1, logfp, "[SRC_CLIENT%d] Client sended FIN", srcID);
+                        removeClient(sockfd);
+                        continue;
+                    }
+                    else { /* 遇到错误 */
+                        if (errno != EWOULDBLOCK) {
+                            logError(-1, logfp, "[SRC_CLIENT%d] Unexpected error on recv", srcID);
+                            removeClient(sockfd);
+                            continue;
+                        }
+                    }
+                }
+            }
+            /* 有空间可以发送数据 */
+            if (events[i].events & EPOLLOUT) {
+                assert(clientFDs.find(sockfd) != clientFDs.end());
+                ClientInfo* desClient = clientFDs[sockfd];
+                /* 转存保存了的数据 */
+                if (copySavedMsg(desClient->cliID) == -1) {
+                    logInfo(-1, logfp, "[DES_CLIENT%d] Failed to copy saved message to client's send buffer",
+                            desClient->cliID);
+                    continue;
+                }
+                desClient->unsend = desClient->sendPtr - desClient->sendBuf;
+                if (desClient->unsend > 0) {
+                    ssize_t n = send(sockfd, desClient->sendBuf, desClient->unsend, 0);
+                    if (n > 0) {
+                        desClient->unsend -= n;
+                        char* unsendPtr = desClient->sendPtr - desClient->unsend;
+                        memcpy(desClient->sendBuf, unsendPtr, desClient->unsend);
+                        desClient->sendPtr = desClient->sendBuf + desClient->unsend;
+                    }
+                    else if (n == 0) { /* 空间不足 */
+                        continue;
+                    }
+                    else { /* 遇到错误 */
+                        if (errno != EWOULDBLOCK) {
+                            logError(-1, logfp, "[DES_CLIENT%d] Unexpected error on recv", desClient->cliID);
+                            removeClient(sockfd);
+                            continue;
                         }
                     }
                 }
             }
         }
     }
+    return 0;
 }
 
 void RelayServer::closeServer() {
@@ -170,13 +256,13 @@ void RelayServer::closeServer() {
     logInfo(0, logfp, "[SERVER] All connected sockets have been closed");
 }
 
-int RelayServer::addClient(clientInfo* client) {
+int RelayServer::addClient(ClientInfo* client) {
     client->cliID = nextID;
     assert(clientIDs.find(client->cliID) == clientIDs.end() && clientFDs.find(client->connfd) == clientFDs.end());
     clientIDs[client->cliID]  = client;
     clientFDs[client->connfd] = client;
     updateNextID();
-    addfd(epollfd, client->connfd, 0);
+    addfd(epollfd, client->connfd, 1, 0); /* 使用EPOLLIN | EPOLLOUT，启用LT模式 */
     logInfo(0, logfp, "[CLIENT] Client %d has joined", client->cliID);
     return 0;
 }
@@ -208,75 +294,21 @@ void RelayServer::updateNextID() {
     }
 }
 
-int RelayServer::setTimeout(const int& connfd) {
-    if (setsockopt(connfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-        logError(-1, logfp, "[SERVER] setsockopt for recv timeout error");
-        return -1;
-    }
-    if (setsockopt(connfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
-        logError(-1, logfp, "[SERVER] setsockopt for send timeout error");
-        return -1;
-    }
-    return 0;
-}
-
-int RelayServer::recvFromClient(const int& connfd, void* buf, const size_t& size) {
-    ssize_t ret = recv(connfd, buf, size, MSG_WAITALL);
-    if (ret < size) {
-        if (ret < 0) {
-            if (errno == EWOULDBLOCK)
-                logError(-1, logfp, "[CLIENT] Client %d recv timeout", recvID);
-            else
-                logError(-1, logfp, "[CLIENT] Client %d recv error", recvID);
-        }
-        else {
-            logInfo(-1, logfp, "[CLIENT] Client %d send FIN", recvID);
-        }
-        return -1;
-    }
-    return ret;
-}
-
-int RelayServer::sendToClient(const int& connfd, const void* buf, const size_t& size) {
-    size_t      nleft;
-    ssize_t     nsended;
-    const char* ptr;
-    ptr   = (const char*)buf;
-    nleft = size;
-    while (nleft > 0) {
-        if ((nsended = send(connfd, ptr, nleft, 0)) <= 0) {
-            if (nsended < 0 && errno == EINTR) {
-                continue;
-            }
-            else if (nsended < 0 && errno == EWOULDBLOCK)
-                logError(-1, logfp, "[CLIENT] Client %d send timeout", sendID);
-            else if (nsended < 0)
-                logError(-1, logfp, "[CLIENT] Client %d send error", sendID);
-            else if (nsended == 0)
-                logError(-1, logfp, "[CLIENT] Client %d has terminated", sendID);
-            return -1;
-        }
-        nleft -= nsended;
-        ptr += nsended;
-    }
-    if (size - nleft < 0) {
-        logError(-1, logfp, "[CLIENT] Client %d send error", sendID);
-        return -1;
-    }
-    return size;
-}
-
 int RelayServer::writeMsgToFile(const int& id, const void* buf, const size_t& size) {
     printf("size: %zd\n", size);
     char filename[NAME_MAX];
     sprintf(filename, "MESSAGE_TO_%d.txt", id);
     FILE* fp = nullptr;
     if (msgUnsend.find(id) != msgUnsend.end()) {
-        fp = msgUnsend[id];
+        fp = msgUnsend[id].savedFile;
     }
     else {
-        fp            = fopen(filename, "a");
-        msgUnsend[id] = fp;
+        fp = fopen(filename, "a");
+        SavedMsg savedMsg;
+        savedMsg.cliID     = id;
+        savedMsg.savedFile = fp;
+        savedMsg.offset    = 0;
+        msgUnsend[id]      = savedMsg;
     }
     fwrite(buf, size, 1, fp);
     fwrite("\n", 1, 1, fp);
@@ -284,35 +316,38 @@ int RelayServer::writeMsgToFile(const int& id, const void* buf, const size_t& si
     return 0;
 }
 
-int RelayServer::sendSavedMsgToClient(const int& connfd, const int& id) {
-    if (msgUnsend.find(id) != msgUnsend.end()) {
-        if (msgUnsend[id] != nullptr) {
-            fclose(msgUnsend[id]);
-        }
-        msgUnsend.erase(id);
-    }
+int RelayServer::copySavedMsg(const int& id) {
+    // if (msgUnsend.find(id) != msgUnsend.end()) {
+    //     if (msgUnsend[id] != nullptr) {
+    //         fclose(msgUnsend[id]);
+    //     }
+    //     msgUnsend.erase(id);
+    // }
     char filename[NAME_MAX];
     sprintf(filename, "MESSAGE_TO_%d.txt", id);
+    ClientInfo* desClient = clientIDs[id];
     if (access(filename, F_OK) == 0) {
         size_t totalSize = 0;
-        char   buf[BUFFER_SIZE + 1];
-        buf[BUFFER_SIZE] = '\0';
+        char   buf[SENDBUF_MAX + 1];
+        buf[SENDBUF_MAX] = '\0';
         FILE* fp         = fopen(filename, "r");
-        while (fgets(buf + hSize, BUFFER_SIZE - hSize + 1, fp) != nullptr) {
-            size_t msgLen = strlen(buf + hSize);
-            if (feof(fp) && buf[hSize] == '\n') {
+        while (fgets(buf + sizeof(Header), SENDBUF_MAX - sizeof(Header) + 1, fp) != nullptr) {
+            size_t msgLen = strlen(buf + sizeof(Header));
+            if (feof(fp) && buf[sizeof(Header)] == '\n') {
                 break;
             }
-            if (buf[hSize + msgLen - 1] == '\n') {
-                buf[hSize + msgLen - 1] = '\0';
+            if (buf[sizeof(Header) + msgLen - 1] == '\n') {
+                buf[sizeof(Header) + msgLen - 1] = '\0';
             }
             Header header;
             header.length = htons(msgLen);
-            memcpy(buf, &header, hSize);
-            if (sendToClient(connfd, buf, msgLen + hSize) < 0) {
-                fclose(fp);
-                return -1;
+            memcpy(buf, &header, sizeof(Header));
+            if (msgLen + sizeof(Header) > SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf)) {
+                break;
             }
+            else {
+            }
+
             totalSize += msgLen;
             if (feof(fp)) {
                 break;
