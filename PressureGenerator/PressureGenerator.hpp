@@ -7,20 +7,24 @@ const char* str1 = "hjjjjjfdsafdasf dasfdasfewqreqw";
 #define RECVBUF_MAX 1024 /* 客户端接收缓冲区大小 */
 #define SENDBUF_MAX 2048 /* 客户端发送缓冲区大小 */
 
+typedef struct ClientBuffer {
+    char   recvBuf[RECVBUF_MAX];     /* 接收缓冲区 */
+    char   sendBuf[SENDBUF_MAX];     /* 发送缓冲区 */
+    size_t unrecv  = sizeof(Header); /* 期望接收的数据大小 */
+    char*  recvPtr = recvBuf;        /* 接收缓冲区指针 */
+    char*  sendPtr = sendBuf;        /* 发送缓冲区指针 */
+} ClientBuffer;
+
 typedef struct ClientInfo {
-    int    connfd;
-    char   recvBuf[RECVBUF_MAX];        /* 接收缓冲区 */
-    char   sendBuf[SENDBUF_MAX];        /* 发送缓冲区 */
-    size_t unrecv     = sizeof(Header); /* 期望接收的数据大小 */
-    char*  recvPtr    = recvBuf;        /* 接收缓冲区指针 */
-    char*  sendPtr    = sendBuf;        /* 发送缓冲区指针 */
-    int    recvStatus = 0;              /* 0: 正在接收头部，非0：正在接收载荷 */
+    int           connfd;      /* 套接字 */
+    int           status = -1; /* -1: 未连接 0: 正在接收头部，非0：正在接收载荷 */
+    ClientBuffer* buffer = nullptr;
 } ClientInfo;
 
 class PressureGenerator {
 private:
     struct sockaddr_in        servaddr;              /* 服务器地址结构 */
-    std::map<int, ClientInfo> clientFDs;             /* 已连接客户端集合 */
+    std::map<int, ClientInfo> clients;               /* 客户端集合 */
     int                       status = 0;            /* 发生器状态 */
     FILE*                     logfp  = nullptr;      /* log文件指针 */
     char                      logFilename[NAME_MAX]; /* log文件名 */

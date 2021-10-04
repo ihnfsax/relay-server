@@ -59,7 +59,7 @@ int PressureGenerator::doit(const char* ip, const char* port) {
     assert(epollfd >= 0);
 
     while (!timeoutFlag && !exitFlag) {
-        if (sizeof(clientFDs) < sessCount) {
+        if (sizeof(clients) < sessCount) {
             if (addClients(events) < 0) {
                 closeGenerator();
                 return 0;
@@ -76,17 +76,13 @@ int PressureGenerator::doit(const char* ip, const char* port) {
             return 0;
         }
     }
-    if (timeoutFlag)
-        logInfo(0, logfp, "[GENERATOR] SIGALARM signal received");
-    if (exitFlag)
-        logInfo(0, logfp, "[GENERATOR] SIGINT signal received");
     closeGenerator();
     return 0;
 }
 
 int PressureGenerator::addClients(struct epoll_event* events) {
     int errorTimes = 10;
-    while (sizeof(clientFDs) < sessCount) {
+    while (sizeof(clients) < sessCount) {
         int sockfd;
         if ((sockfd = createSocket(AF_INET, SOCK_STREAM, 0, logfp)) < 0) {
             errorTimes--;
@@ -108,29 +104,41 @@ int PressureGenerator::addClients(struct epoll_event* events) {
                 continue;
             }
             else {
-                clientFDs[sockfd] = 0;        /* 设置状态为未连接 */
+                ClientInfo client;
+                client.connfd   = sockfd;
+                client.status   = -1; /* 设置状态为未连接 */
+                clients[sockfd] = client;
                 addfd(epollfd, sockfd, 1, 0); /* 添加套接字到epoll事件表 */
             }
         }
         /* 直接连接建立 */
         else {
-            clientFDs[sockfd] = 1;        /* 设置状态为已连接 */
+            ClientInfo client;
+            client.connfd   = sockfd;
+            client.status   = 0;                /* 设置状态为已连接(等待接收头部) */
+            client.buffer   = new ClientBuffer; /* 分配缓冲区 */
+            clients[sockfd] = client;
             addfd(epollfd, sockfd, 1, 0); /* 添加套接字到epoll事件表 */
             logInfo(0, logfp, "[CLIENT] (fd:%d) New connection established (%zd clients in total)[1]", sockfd,
-                    sizeof(clientFDs));
+                    sizeof(clients));
         }
     }
     return 0;
 }
 
-void PressureGenerator::closeGenerator() {}
+void PressureGenerator::closeGenerator() {
+    if (timeoutFlag)
+        logInfo(0, logfp, "[GENERATOR] SIGALARM signal received");
+    if (exitFlag)
+        logInfo(0, logfp, "[GENERATOR] SIGINT signal received");
+}
 
 int PressureGenerator::handle_events(struct epoll_event* events, const int& number) {
     for (int i = 0; i < number; ++i) {
         int sockfd = events[i].data.fd;
-        assert(clientFDs.find(sockfd) != clientFDs.end());
+        assert(clients.find(sockfd) != clients.end());
         /* 如果是未连接套接字 */
-        if (clientFDs[sockfd] == 0) {
+        if (clients[sockfd].status == -1) {
             socklen_t len;
             int       error;
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) != 0) {
@@ -138,18 +146,62 @@ int PressureGenerator::handle_events(struct epoll_event* events, const int& numb
                 removeClient(sockfd);
                 continue;
             }
-            clientFDs[sockfd] = 1; /* 设置状态为已连接 */
+            clients[sockfd].status = 0;                /* 设置状态为已连接(等待接收头部) */
+            clients[sockfd].buffer = new ClientBuffer; /* 分配缓冲区 */
             logInfo(0, logfp, "[CLIENT] (fd:%d) New connection established (%zd clients in total)[2]", sockfd,
-                    sizeof(clientFDs));
+                    sizeof(clients));
             // if (recvfromServer(sockfd) < 0) {
             //     removeClient(sockfd);
             //     continue;
             // }
         }
+        assert(clients[sockfd].status != -1);
+        assert(clients[sockfd].buffer != nullptr);
+        ClientBuffer* buffer = clients[sockfd].buffer;
         /* 如果可读 */
         if (events[i].events & EPOLLIN) {
-            assert(clientFDs[sockfd] == 1);
-
+            /* 接收头部 */
+            if (clients[sockfd].status == 0) {
+                assert(buffer->unrecv != 0);
+                ssize_t n = recv(sockfd, buffer->recvPtr, buffer->unrecv, 0);
+                if (n == (ssize_t)buffer->unrecv) { /* 接收完毕 */
+                    Header header;
+                    memcpy(&header, buffer->recvBuf, sizeof(Header));
+                    size_t msgLen = (size_t)ntohs(header.length);
+                    if (msgLen <= RECVBUF_MAX && msgLen > 0) {
+                        buffer->recvPtr        = buffer->recvBuf;
+                        buffer->unrecv         = msgLen;
+                        clients[sockfd].status = 1;
+                    }
+                    else if (msgLen == 0) {
+                        buffer->recvPtr        = buffer->recvBuf;
+                        buffer->unrecv         = sizeof(Header);
+                        clients[sockfd].status = 0;
+                    }
+                    else {
+                        logInfo(-1, logfp, "[CLIENT] (fd:%d) Message length is larger than the receive buffer size",
+                                sockfd);
+                        removeClient(sockfd);
+                        continue;
+                    }
+                }
+                else if (n > 0 && n < (ssize_t)buffer->unrecv) { /* 接收了一部分 */
+                    buffer->recvPtr += n;
+                    buffer->unrecv -= n;
+                }
+                else if (n == 0) { /* 遇到FIN */
+                    logInfo(-1, logfp, "[SRC_CLIENT %d] Client sended FIN", srcID);
+                    removeClient(sockfd);
+                    continue;
+                }
+                else { /* 遇到错误 */
+                    if (errno != EWOULDBLOCK) {
+                        logError(-1, logfp, "[SRC_CLIENT %d] Unexpected error on recv", srcID);
+                        removeClient(sockfd);
+                        continue;
+                    }
+                }
+            }
             // if (recvfromServer(sockfd) < 0) {
             //     removeClient(sockfd);
             //     continue;
@@ -157,7 +209,8 @@ int PressureGenerator::handle_events(struct epoll_event* events, const int& numb
         }
         /* 如果可写 */
         if (events[i].events & EPOLLOUT) {
-            assert(clientFDs[sockfd] == 1);
+            assert(clients[sockfd].status != -1);
+            assert(clients[sockfd].buffer != nullptr);
             // Header header;
             // int    msgLen = strlen(str1) + 1;
             // header.length = htons((uint16_t)msgLen);

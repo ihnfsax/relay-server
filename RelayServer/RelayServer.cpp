@@ -25,7 +25,7 @@ int RelayServer::start(const char* ip, const char* port, int logFlag) {
         printf("No log file specified.\n");
     }
     int r = doit(ip, port);
-    logInfo(0, logfp, "[SERVER] Server shutdown");
+    logInfo(0, logfp, "RelayServer - server - Server shutdown");
     if (logfp != nullptr) {
         fclose(logfp);
         logfp = nullptr;
@@ -61,7 +61,7 @@ int RelayServer::doit(const char* ip, const char* port) {
         close(listenfd);
         return -1;
     }
-    logInfo(0, logfp, "[SERVER] Relay server has binded to %s:%s", ip, port);
+    logInfo(0, logfp, "RelayServer - server - Bind to %s:%s", ip, port);
 
     /* 创建epoll事件表描述符 */
     struct epoll_event events[MAX_EVENT_NUMBER];
@@ -73,7 +73,7 @@ int RelayServer::doit(const char* ip, const char* port) {
         close(listenfd);
         return -1;
     }
-    logInfo(0, logfp, "[SERVER] Relay server begin to listen", ip, port);
+    logInfo(0, logfp, "RelayServer - server - Begin to listen", ip, port);
 
     /* 添加监听套接字到epoll事件表 */
     addfd(epollfd, listenfd, 0, 0);
@@ -83,7 +83,7 @@ int RelayServer::doit(const char* ip, const char* port) {
         /* 等待事件 */
         int ready = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
         if (ready < 0) {
-            logError(-1, logfp, "[SERVER] epoll_wait error");
+            logError(-1, logfp, "RelayServer - server - epoll_wait error");
             closeServer();
             close(listenfd);
             return 0;
@@ -112,7 +112,7 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                 if (errno == EWOULDBLOCK || errno == ECONNABORTED || errno == EPROTO || errno == EINTR)
                     continue;
                 else
-                    return logError(-1, logfp, "[SERVER] Unexpected error on accept");
+                    return logError(-1, logfp, "RelayServer - server - Unexpected error on accept");
             }
             ClientInfo* client = new ClientInfo;
             client->connfd     = connfd;
@@ -146,7 +146,8 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                             srcClient->recvStatus = 0;
                         }
                         else {
-                            logInfo(-1, logfp, "[SRC_CLIENT %d] Message length is larger than the receive buffer size",
+                            logInfo(-1, logfp,
+                                    "RelayServer - client %d - Message length is larger than the receive buffer size",
                                     srcID);
                             removeClient(sockfd);
                             continue;
@@ -157,18 +158,19 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                         srcClient->unrecv -= n;
                     }
                     else if (n == 0) { /* 遇到FIN */
-                        logInfo(-1, logfp, "[SRC_CLIENT %d] Client sended FIN", srcID);
+                        logInfo(-1, logfp, "RelayServer - client %d - Receive FIN from client", srcID);
                         removeClient(sockfd);
                         continue;
                     }
                     else { /* 遇到错误 */
                         if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "[SRC_CLIENT %d] Unexpected error on recv", srcID);
+                            logError(-1, logfp, "RelayServer - client %d - Unexpected error on recv", srcID);
                             removeClient(sockfd);
                             continue;
                         }
                     }
-                } /* 接收载荷 */
+                }
+                /* 接收载荷 */
                 if (clientFDs[sockfd]->recvStatus != 0) {
                     assert(srcClient->unrecv != 0);
                     ssize_t n = recv(sockfd, srcClient->recvPtr, srcClient->unrecv, 0);
@@ -187,7 +189,8 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                                 desClient->sendPtr += msgLen;
                             }
                             else {
-                                logInfo(-1, logfp, "[DES_CLIENT %d] Insufficient available send buffer space");
+                                logInfo(-1, logfp,
+                                        "RelayServer - client %d - Insufficient available send buffer space");
                                 /* 丢弃报文 */
                             }
                         }
@@ -205,13 +208,13 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                         srcClient->unrecv -= n;
                     }
                     else if (n == 0) { /* 遇到FIN */
-                        logInfo(-1, logfp, "[SRC_CLIENT %d] Client sended FIN", srcID);
+                        logInfo(-1, logfp, "RelayServer - client %d - Receive FIN from client", srcID);
                         removeClient(sockfd);
                         continue;
                     }
                     else { /* 遇到错误 */
                         if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "[SRC_CLIENT %d] Unexpected error on recv", srcID);
+                            logError(-1, logfp, "RelayServer - client %d - Unexpected error on recv", srcID);
                             removeClient(sockfd);
                             continue;
                         }
@@ -224,7 +227,7 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                 ClientInfo* desClient = clientFDs[sockfd];
                 /* 转存保存了的数据 */
                 if (copySavedMsg(desClient->cliID) == -1) {
-                    logInfo(-1, logfp, "[DES_CLIENT %d] Failed to copy saved message to client's send buffer",
+                    logInfo(-1, logfp, "RelayServer - client %d - Fail to copy saved message to client's send buffer",
                             desClient->cliID);
                     continue;
                 }
@@ -242,7 +245,7 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                     }
                     else { /* 遇到错误 */
                         if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "[DES_CLIENT %d] Unexpected error on recv", desClient->cliID);
+                            logError(-1, logfp, "RelayServer - client %d - Unexpected error on recv", desClient->cliID);
                             removeClient(sockfd);
                             continue;
                         }
@@ -256,13 +259,13 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
 
 void RelayServer::closeServer() {
     if (exitFlag)
-        logInfo(0, logfp, "[SERVER] SIGINT signal received");
+        logInfo(0, logfp, "RelayServer - server - Received SIGINT signal");
     std::vector<int> connfds;
     for (auto const& cli : clientFDs)
         connfds.push_back(cli.first);
     for (auto const& connfd : connfds)
         removeClient(connfd);
-    logInfo(0, logfp, "[SERVER] All connected sockets have been closed");
+    logInfo(0, logfp, "RelayServer - server - All connected sockets are closed");
     for (auto file : msgRead) {
         fclose(file.second.fp);
         if (msgAppend.find(file.first) != msgAppend.end()) {
@@ -270,7 +273,7 @@ void RelayServer::closeServer() {
         }
         remove(file.second.filename);
     }
-    logInfo(0, logfp, "[SERVER] All read files have been deleted");
+    logInfo(0, logfp, "RelayServer - server - All read files are deleted");
 }
 
 int RelayServer::addClient(ClientInfo* client) {
@@ -280,7 +283,7 @@ int RelayServer::addClient(ClientInfo* client) {
     clientFDs[client->connfd] = client;
     updateNextID();
     addfd(epollfd, client->connfd, 1, 0); /* 使用EPOLLIN | EPOLLOUT，启用LT模式 */
-    logInfo(0, logfp, "[CLIENT] Client %d has joined", client->cliID);
+    logInfo(0, logfp, "RelayServer - client %d - New client", client->cliID);
     return 0;
 }
 
@@ -294,10 +297,10 @@ int RelayServer::removeClient(const int& connfd) {
         nextID = id;
     }
     if (close(connfd) < 0) {
-        logError(-1, logfp, "[SERVER] Client %d close error", id);
+        logError(-1, logfp, "RelayServer - client %d - Close error", id);
     }
     delfd(epollfd, connfd);
-    logInfo(0, logfp, "[CLIENT] Client %d has left", id);
+    logInfo(0, logfp, "RelayServer - client %d - Client left", id);
     return 0;
 }
 
@@ -366,11 +369,11 @@ int RelayServer::copySavedMsg(const int& id) {
                 memcpy(buf, &header, sizeof(Header));
                 if ((long int)msgLen + (long int)sizeof(Header)
                     > SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf)) {
-                    logInfo(0, logfp, "[DES_CLIENT %d] Send buffer can't hold saved message", id);
+                    logInfo(0, logfp, "RelayServer - client %d - Send buffer can't hold saved message", id);
                     fseek(fp, offset, SEEK_SET);
                 }
                 else {
-                    logInfo(0, logfp, "[DES_CLIENT %d] Copy %d bytes saved message to send buffer", id,
+                    logInfo(0, logfp, "RelayServer - client %d - Copy %d bytes saved message to send buffer", id,
                             msgLen + sizeof(Header));
                     memcpy(desClient->sendPtr, buf, msgLen + sizeof(Header));
                     desClient->sendPtr += msgLen + sizeof(Header);
@@ -385,10 +388,10 @@ int RelayServer::copySavedMsg(const int& id) {
                 msgAppend.erase(id);
             }
             if (remove(filename) < 0) {
-                return logError(-1, logfp, "[DES_CLIENT %d] Fail to remove file %s", id, filename);
+                return logError(-1, logfp, "RelayServer - client %d - Fail to remove file %s", id, filename);
             }
             else {
-                return logInfo(0, logfp, "[DES_CLIENT %d] Remove file %s successfully", id, filename);
+                return logInfo(0, logfp, "RelayServer - client %d - Remove file %s successfully", id, filename);
             }
         }
     }
