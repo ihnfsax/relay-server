@@ -39,7 +39,7 @@ private:
     int                             epollfd;               /* epoll描述符 */
     uint16_t                        nextID = 0;            /* 下一个可用的ID */
     size_t                          hSize  = 0;            /* 报文头部长度 */
-    static int                      exitFlag;
+    static int                      exitFlag;              /* SIGINT退出标志 */
 
     int         doit(const char* ip, const char* port);
     int         handle_events(struct epoll_event* events, const int& number);

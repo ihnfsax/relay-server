@@ -33,7 +33,7 @@ int RelayServer::start(const char* ip, const char* port, int logFlag) {
     status = 0;
     return r;
 }
-/* 返回值：-1表示出现错误终止，-2表示被SIGINT信号终止 */
+/* 返回值：-1表示出现错误终止，0表示被SIGINT信号终止 */
 int RelayServer::doit(const char* ip, const char* port) {
     /* 初始化地址结构 */
     struct sockaddr_in servaddr;
@@ -95,9 +95,10 @@ int RelayServer::doit(const char* ip, const char* port) {
             return -1;
         }
     }
+    logInfo(0, logfp, "[SERVER] SIGINT signal received");
     closeServer();
     close(listenfd);
-    return -2;
+    return 0;
 }
 
 int RelayServer::handle_events(struct epoll_event* events, const int& number) {
