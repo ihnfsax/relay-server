@@ -86,16 +86,15 @@ int RelayServer::doit(const char* ip, const char* port) {
             logError(-1, logfp, "[SERVER] epoll_wait error");
             closeServer();
             close(listenfd);
-            return -1;
+            return 0;
         }
         /* 处理事件 */
         if (handle_events(events, ready) < 0) {
             closeServer();
             close(listenfd);
-            return -1;
+            return 0;
         }
     }
-    logInfo(0, logfp, "[SERVER] SIGINT signal received");
     closeServer();
     close(listenfd);
     return 0;
@@ -229,14 +228,14 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                             desClient->cliID);
                     continue;
                 }
-                desClient->unsend = desClient->sendPtr - desClient->sendBuf;
-                if (desClient->unsend > 0) {
-                    ssize_t n = send(sockfd, desClient->sendBuf, desClient->unsend, 0);
+                long unsend = desClient->sendPtr - desClient->sendBuf;
+                if (unsend > 0) {
+                    ssize_t n = send(sockfd, desClient->sendBuf, unsend, 0);
                     if (n > 0) {
-                        desClient->unsend -= n;
-                        char* unsendPtr = desClient->sendPtr - desClient->unsend;
-                        memcpy(desClient->sendBuf, unsendPtr, desClient->unsend);
-                        desClient->sendPtr = desClient->sendBuf + desClient->unsend;
+                        unsend -= n;
+                        char* unsendPtr = desClient->sendPtr - unsend;
+                        memcpy(desClient->sendBuf, unsendPtr, unsend);
+                        desClient->sendPtr = desClient->sendBuf + unsend;
                     }
                     else if (n == 0) { /* 空间不足 */
                         continue;
@@ -256,6 +255,8 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
 }
 
 void RelayServer::closeServer() {
+    if (exitFlag)
+        logInfo(0, logfp, "[SERVER] SIGINT signal received");
     std::vector<int> connfds;
     for (auto const& cli : clientFDs)
         connfds.push_back(cli.first);
@@ -285,7 +286,6 @@ int RelayServer::addClient(ClientInfo* client) {
 
 int RelayServer::removeClient(const int& connfd) {
     assert(clientFDs.find(connfd) != clientFDs.end());
-
     int id = clientFDs[connfd]->cliID;
     delete clientFDs[connfd];
     clientIDs.erase(id);
@@ -374,7 +374,6 @@ int RelayServer::copySavedMsg(const int& id) {
                             msgLen + sizeof(Header));
                     memcpy(desClient->sendPtr, buf, msgLen + sizeof(Header));
                     desClient->sendPtr += msgLen + sizeof(Header);
-                    desClient->unsend += msgLen + sizeof(Header);
                 }
             }
         }

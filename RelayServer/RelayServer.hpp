@@ -11,7 +11,6 @@ typedef struct ClientInfo {
     char     recvBuf[RECVBUF_MAX];        /* 接收缓冲区 */
     char     sendBuf[SENDBUF_MAX];        /* 发送缓冲区 */
     size_t   unrecv     = sizeof(Header); /* 期望接收的数据大小 */
-    size_t   unsend     = 0;              /* 期望发送的数据大小 */
     char*    recvPtr    = recvBuf;        /* 接收缓冲区指针 */
     char*    sendPtr    = sendBuf;        /* 发送缓冲区指针 */
     int      recvStatus = 0;              /* 0: 正在接收头部，非0：正在接收载荷 */
