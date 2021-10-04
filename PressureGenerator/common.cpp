@@ -1,16 +1,35 @@
 #include "common.hpp"
 
+#define LOGGER_PRETTY_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
+#define LOGGER_PRETTY_MS_FORMAT ".%03d"
+
+std::string prettyTime() {
+    auto        tp           = std::chrono::system_clock::now();
+    std::time_t current_time = std::chrono::system_clock::to_time_t(tp);
+    std::tm*    time_info    = std::localtime(&current_time);
+
+    char buffer[128];
+    int  string_size = strftime(buffer, sizeof(buffer), LOGGER_PRETTY_TIME_FORMAT, time_info);
+
+    auto dur = tp.time_since_epoch();
+    int  ms  = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(dur).count()) % 1000;
+    string_size += std::snprintf(buffer + string_size, sizeof(buffer) - string_size, LOGGER_PRETTY_MS_FORMAT, ms);
+
+    return std::string(buffer, buffer + string_size);
+}
+
 int logInfo(int returnValue, FILE* fp, const char* fmt, ...) {
     if (fp == nullptr) {
         return returnValue;
     }
-    char    buf[LINE_MAX + 1];
+    fprintf(fp, "%s - INFO - ", prettyTime().c_str());
+    char    msgBuf[LINE_MAX + 1];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(buf, LINE_MAX, fmt, ap);
+    vsnprintf(msgBuf, LINE_MAX, fmt, ap);
     va_end(ap);
-    strcat(buf, "\n");
-    fprintf(fp, "%s", buf);
+    strcat(msgBuf, "\n");
+    fprintf(fp, "%s", msgBuf);
     fflush(fp);
     return returnValue;
 }
@@ -19,16 +38,18 @@ int logError(int returnValue, FILE* fp, const char* fmt, ...) {
     if (fp == nullptr) {
         return returnValue;
     }
-    char    buf[LINE_MAX + 1];
+    fprintf(fp, "%s - ERROR - ", prettyTime().c_str());
     int     errno_save = errno;
+    char    msgBuf[LINE_MAX + 1];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(buf, LINE_MAX, fmt, ap);
+    vsnprintf(msgBuf, LINE_MAX, fmt, ap);
     va_end(ap);
-    int n = strlen(buf);
-    snprintf(buf + n, LINE_MAX - n, ": %s", strerror(errno_save));
-    strcat(buf, "\n");
-    fprintf(fp, "%s", buf);
+    int n = strlen(msgBuf);
+    if (errno_save != 0)
+        snprintf(msgBuf + n, LINE_MAX - n, ": %s", strerror(errno_save));
+    strcat(msgBuf, "\n");
+    fprintf(fp, "%s", msgBuf);
     fflush(fp);
     return returnValue;
 }
@@ -36,7 +57,7 @@ int logError(int returnValue, FILE* fp, const char* fmt, ...) {
 int createSocket(int family, int type, int protocol, FILE* fp) {
     int n;
     if ((n = socket(family, type, protocol)) < 0)
-        return logError(-1, fp, "listen error");
+        return logError(-1, fp, "socket error");
     return n;
 }
 

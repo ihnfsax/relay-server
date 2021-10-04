@@ -46,7 +46,8 @@ int logError(int returnValue, FILE* fp, const char* fmt, ...) {
     vsnprintf(msgBuf, LINE_MAX, fmt, ap);
     va_end(ap);
     int n = strlen(msgBuf);
-    snprintf(msgBuf + n, LINE_MAX - n, ": %s", strerror(errno_save));
+    if (errno_save != 0)
+        snprintf(msgBuf + n, LINE_MAX - n, ": %s", strerror(errno_save));
     strcat(msgBuf, "\n");
     fprintf(fp, "%s", msgBuf);
     fflush(fp);
@@ -56,7 +57,7 @@ int logError(int returnValue, FILE* fp, const char* fmt, ...) {
 int createSocket(int family, int type, int protocol, FILE* fp) {
     int n;
     if ((n = socket(family, type, protocol)) < 0)
-        return logError(-1, fp, "listen error");
+        return logError(-1, fp, "socket error");
     return n;
 }
 

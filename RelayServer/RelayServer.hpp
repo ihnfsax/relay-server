@@ -49,12 +49,14 @@ private:
     int         writeMsgToFile(const int& id, const void* buf, const size_t& size);
     int         copySavedMsg(const int& id);
     static void sigIntHandler(int signum);
+    static void sigPipeHandler(int signum);
     sigfunc*    signal(int signo, sigfunc* func);
 
 public:
     RelayServer() {
         exitFlag = 0;
         signal(SIGINT, sigIntHandler);
+        signal(SIGPIPE, sigPipeHandler);
         pid = getpid();
         snprintf(logFilename, NAME_MAX - 1, "SERVER_%d.log", pid);
     }
