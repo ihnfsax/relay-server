@@ -68,8 +68,13 @@ int PressureGenerator::doit(const char* ip, const char* port) {
             closeGenerator();
             return 0;
         }
-        handle_events(events, ready);
+        if (handle_events(events, ready) < 0) {
+            closeGenerator();
+            return 0;
+        }
     }
+    closeGenerator();
+    return 0;
 }
 
 int PressureGenerator::addClients(struct epoll_event* events) {

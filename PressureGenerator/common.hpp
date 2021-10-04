@@ -20,7 +20,6 @@
 #define NAME_MAX 255                                       /* chars in a file name */
 #define LINE_MAX 255                                       /* char in one line of log file */
 #define MAX_EVENT_NUMBER 30000                             /* 事件数 */
-#define BUFFER_SIZE 2048                                   /* 服务器接收缓冲区大小 */
 #define counterPart(self) (self % 2 ? self - 1 : self + 1) /* 得到对端客户端ID */
 
 /* 报文头结构 */

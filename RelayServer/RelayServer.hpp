@@ -54,6 +54,7 @@ private:
 
 public:
     RelayServer() {
+        exitFlag = 0;
         signal(SIGINT, sigIntHandler);
         pid = getpid();
         snprintf(logFilename, NAME_MAX - 1, "SERVER_%d.log", pid);

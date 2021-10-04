@@ -33,7 +33,7 @@ int RelayServer::start(const char* ip, const char* port, int logFlag) {
     status = 0;
     return r;
 }
-
+/* 返回值：-1表示出现错误终止，-2表示被SIGINT信号终止 */
 int RelayServer::doit(const char* ip, const char* port) {
     /* 初始化地址结构 */
     struct sockaddr_in servaddr;
@@ -80,20 +80,24 @@ int RelayServer::doit(const char* ip, const char* port) {
     setnonblocking(listenfd);
 
     while (!exitFlag) {
+        /* 等待事件 */
         int ready = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
         if (ready < 0) {
             logError(-1, logfp, "[SERVER] epoll_wait error");
             closeServer();
-            return close(listenfd);
+            close(listenfd);
+            return -1;
         }
         /* 处理事件 */
         if (handle_events(events, ready) < 0) {
             closeServer();
-            return close(listenfd);
+            close(listenfd);
+            return -1;
         }
     }
     closeServer();
-    return close(listenfd);
+    close(listenfd);
+    return -2;
 }
 
 int RelayServer::handle_events(struct epoll_event* events, const int& number) {
