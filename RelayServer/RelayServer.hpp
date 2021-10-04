@@ -17,18 +17,20 @@ typedef struct ClientInfo {
     int      recvStatus = 0;              /* 0: 正在接收头部，非0：正在接收载荷 */
 } ClientInfo;
 
-typedef struct SavedMsg {
-    int   cliID;
-    FILE* savedFile = nullptr;
-    long  offset    = 0;
-} SavedMsg;
+typedef struct File {
+    FILE* fp;
+    char  filename[NAME_MAX];
+} File;
+
+typedef void sigfunc(int);
 
 /* 采用LT非阻塞模式 */
 class RelayServer {
 private:
     std::map<uint16_t, ClientInfo*> clientIDs;             /* 已连接客户端集合1 */
     std::map<int, ClientInfo*>      clientFDs;             /* 已连接客户端集合2 */
-    std::map<uint16_t, SavedMsg>    msgUnsend;             /* 未发送的数据 */
+    std::map<uint16_t, File>        msgAppend;             /* 未发送的数据 */
+    std::map<uint16_t, File>        msgRead;               /* 未发送的数据 */
     int                             status = 0;            /* 服务器状态 */
     FILE*                           logfp  = nullptr;      /* log文件指针 */
     pid_t                           pid;                   /* 进程ID */
@@ -37,18 +39,22 @@ private:
     int                             epollfd;               /* epoll描述符 */
     uint16_t                        nextID = 0;            /* 下一个可用的ID */
     size_t                          hSize  = 0;            /* 报文头部长度 */
+    static int                      exitFlag;
 
-    int  doit(const char* ip, const char* port);
-    int  handle_events(struct epoll_event* events, const int& number);
-    void closeServer();
-    int  addClient(ClientInfo* client);
-    int  removeClient(const int& connfd);
-    void updateNextID();
-    int  writeMsgToFile(const int& id, const void* buf, const size_t& size);
-    int  copySavedMsg(const int& id);
+    int         doit(const char* ip, const char* port);
+    int         handle_events(struct epoll_event* events, const int& number);
+    void        closeServer();
+    int         addClient(ClientInfo* client);
+    int         removeClient(const int& connfd);
+    void        updateNextID();
+    int         writeMsgToFile(const int& id, const void* buf, const size_t& size);
+    int         copySavedMsg(const int& id);
+    static void sigIntHandler(int signum);
+    sigfunc*    signal(int signo, sigfunc* func);
 
 public:
     RelayServer() {
+        signal(SIGINT, sigIntHandler);
         pid = getpid();
         snprintf(logFilename, NAME_MAX - 1, "SERVER_%d.log", pid);
     }

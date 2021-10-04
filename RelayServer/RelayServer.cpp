@@ -1,6 +1,8 @@
 #include "RelayServer.hpp"
 #include <vector>
 
+int RelayServer::exitFlag = 0;
+
 int RelayServer::start(const char* ip, const char* port, int logFlag) {
     if (status != 0) {
         printf("This Server has been started.\n");
@@ -77,7 +79,7 @@ int RelayServer::doit(const char* ip, const char* port) {
     addfd(epollfd, listenfd, 0, 0);
     setnonblocking(listenfd);
 
-    while (1) {
+    while (!exitFlag) {
         int ready = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
         if (ready < 0) {
             logError(-1, logfp, "[SERVER] epoll_wait error");
@@ -90,7 +92,7 @@ int RelayServer::doit(const char* ip, const char* port) {
             return close(listenfd);
         }
     }
-
+    closeServer();
     return close(listenfd);
 }
 
@@ -100,8 +102,8 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
         /* 监听套接字 */
         if (sockfd == listenfd) {
             struct sockaddr_in cliAddr;
-            socklen_t          cliAddrLen;
-            int                connfd = accept(listenfd, (struct sockaddr*)&cliAddr, &cliAddrLen);
+            socklen_t          cliAddrLen = sizeof(cliAddr);
+            int                connfd     = accept(listenfd, (struct sockaddr*)&cliAddr, &cliAddrLen);
             if (connfd < 0) {
                 if (errno == EWOULDBLOCK || errno == ECONNABORTED || errno == EPROTO || errno == EINTR)
                     continue;
@@ -125,7 +127,7 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                 if (clientFDs[sockfd]->recvStatus == 0) {
                     assert(srcClient->unrecv != 0);
                     ssize_t n = recv(sockfd, srcClient->recvPtr, srcClient->unrecv, 0);
-                    if (n == srcClient->unrecv) { /* 接收完毕 */
+                    if (n == (ssize_t)srcClient->unrecv) { /* 接收完毕 */
                         Header header;
                         memcpy(&header, srcClient->recvBuf, sizeof(Header));
                         size_t msgLen = (size_t)ntohs(header.length);
@@ -140,24 +142,24 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                             srcClient->recvStatus = 0;
                         }
                         else {
-                            logInfo(-1, logfp, "[SRC_CLIENT%d] Message length is larger than the receive buffer size",
+                            logInfo(-1, logfp, "[SRC_CLIENT %d] Message length is larger than the receive buffer size",
                                     srcID);
                             removeClient(sockfd);
                             continue;
                         }
                     }
-                    else if (n > 0 && n < srcClient->unrecv) { /* 接收了一部分 */
+                    else if (n > 0 && n < (ssize_t)srcClient->unrecv) { /* 接收了一部分 */
                         srcClient->recvPtr += n;
                         srcClient->unrecv -= n;
                     }
                     else if (n == 0) { /* 遇到FIN */
-                        logInfo(-1, logfp, "[SRC_CLIENT%d] Client sended FIN", srcID);
+                        logInfo(-1, logfp, "[SRC_CLIENT %d] Client sended FIN", srcID);
                         removeClient(sockfd);
                         continue;
                     }
                     else { /* 遇到错误 */
                         if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "[SRC_CLIENT%d] Unexpected error on recv", srcID);
+                            logError(-1, logfp, "[SRC_CLIENT %d] Unexpected error on recv", srcID);
                             removeClient(sockfd);
                             continue;
                         }
@@ -166,12 +168,13 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                 if (clientFDs[sockfd]->recvStatus != 0) {
                     assert(srcClient->unrecv != 0);
                     ssize_t n = recv(sockfd, srcClient->recvPtr, srcClient->unrecv, 0);
-                    if (n == srcClient->unrecv) { /* 接收完毕 */
+                    if (n == (ssize_t)srcClient->unrecv) { /* 接收完毕 */
                         size_t msgLen = (srcClient->recvPtr - srcClient->recvBuf) + n;
                         /* 如果另一端存在，则复制数据 */
                         if (clientIDs.find(desID) != clientIDs.end()) {
                             ClientInfo* desClient = clientIDs[desID];
-                            if (SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf) > sizeof(Header) + msgLen) {
+                            if (SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf)
+                                > (long int)sizeof(Header) + (long int)msgLen) {
                                 Header header;
                                 header.length = htons((uint16_t)msgLen);
                                 memcpy(desClient->sendPtr, &header, sizeof(Header));
@@ -180,7 +183,7 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                                 desClient->sendPtr += msgLen;
                             }
                             else {
-                                logInfo(-1, logfp, "[DES_CLIENT%d] Insufficient available send buffer space");
+                                logInfo(-1, logfp, "[DES_CLIENT %d] Insufficient available send buffer space");
                                 /* 丢弃报文 */
                             }
                         }
@@ -193,18 +196,18 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                         srcClient->unrecv     = sizeof(Header);
                         srcClient->recvStatus = 0;
                     }
-                    else if (n > 0 && n < srcClient->unrecv) { /* 接收了一部分 */
+                    else if (n > 0 && n < (ssize_t)srcClient->unrecv) { /* 接收了一部分 */
                         srcClient->recvPtr += n;
                         srcClient->unrecv -= n;
                     }
                     else if (n == 0) { /* 遇到FIN */
-                        logInfo(-1, logfp, "[SRC_CLIENT%d] Client sended FIN", srcID);
+                        logInfo(-1, logfp, "[SRC_CLIENT %d] Client sended FIN", srcID);
                         removeClient(sockfd);
                         continue;
                     }
                     else { /* 遇到错误 */
                         if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "[SRC_CLIENT%d] Unexpected error on recv", srcID);
+                            logError(-1, logfp, "[SRC_CLIENT %d] Unexpected error on recv", srcID);
                             removeClient(sockfd);
                             continue;
                         }
@@ -217,7 +220,7 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                 ClientInfo* desClient = clientFDs[sockfd];
                 /* 转存保存了的数据 */
                 if (copySavedMsg(desClient->cliID) == -1) {
-                    logInfo(-1, logfp, "[DES_CLIENT%d] Failed to copy saved message to client's send buffer",
+                    logInfo(-1, logfp, "[DES_CLIENT %d] Failed to copy saved message to client's send buffer",
                             desClient->cliID);
                     continue;
                 }
@@ -235,7 +238,7 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
                     }
                     else { /* 遇到错误 */
                         if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "[DES_CLIENT%d] Unexpected error on recv", desClient->cliID);
+                            logError(-1, logfp, "[DES_CLIENT %d] Unexpected error on recv", desClient->cliID);
                             removeClient(sockfd);
                             continue;
                         }
@@ -254,6 +257,14 @@ void RelayServer::closeServer() {
     for (auto const& connfd : connfds)
         removeClient(connfd);
     logInfo(0, logfp, "[SERVER] All connected sockets have been closed");
+    for (auto file : msgRead) {
+        fclose(file.second.fp);
+        if (msgAppend.find(file.first) != msgAppend.end()) {
+            fclose(msgAppend[file.first].fp);
+        }
+        remove(file.second.filename);
+    }
+    logInfo(0, logfp, "[SERVER] All read files have been deleted");
 }
 
 int RelayServer::addClient(ClientInfo* client) {
@@ -295,20 +306,18 @@ void RelayServer::updateNextID() {
 }
 
 int RelayServer::writeMsgToFile(const int& id, const void* buf, const size_t& size) {
-    printf("size: %zd\n", size);
     char filename[NAME_MAX];
     sprintf(filename, "MESSAGE_TO_%d.txt", id);
     FILE* fp = nullptr;
-    if (msgUnsend.find(id) != msgUnsend.end()) {
-        fp = msgUnsend[id].savedFile;
+    if (msgAppend.find(id) != msgAppend.end()) {
+        fp = msgAppend[id].fp;
     }
     else {
         fp = fopen(filename, "a");
-        SavedMsg savedMsg;
-        savedMsg.cliID     = id;
-        savedMsg.savedFile = fp;
-        savedMsg.offset    = 0;
-        msgUnsend[id]      = savedMsg;
+        File file;
+        file.fp = fp;
+        strcpy(file.filename, filename);
+        msgAppend[id] = file;
     }
     fwrite(buf, size, 1, fp);
     fwrite("\n", 1, 1, fp);
@@ -317,47 +326,86 @@ int RelayServer::writeMsgToFile(const int& id, const void* buf, const size_t& si
 }
 
 int RelayServer::copySavedMsg(const int& id) {
-    // if (msgUnsend.find(id) != msgUnsend.end()) {
-    //     if (msgUnsend[id] != nullptr) {
-    //         fclose(msgUnsend[id]);
-    //     }
-    //     msgUnsend.erase(id);
-    // }
-    char filename[NAME_MAX];
+    FILE* fp = nullptr;
+    char  filename[NAME_MAX];
     sprintf(filename, "MESSAGE_TO_%d.txt", id);
-    ClientInfo* desClient = clientIDs[id];
-    if (access(filename, F_OK) == 0) {
-        size_t totalSize = 0;
-        char   buf[SENDBUF_MAX + 1];
+    if (msgRead.find(id) != msgRead.end()) {
+        assert(msgRead[id].fp != nullptr);
+        fp = msgRead[id].fp;
+    }
+    else {
+        if (access(filename, F_OK) == 0) {
+            fp = fopen(filename, "r");
+            File file;
+            file.fp = fp;
+            strcpy(file.filename, filename);
+            msgRead[id] = file;
+        }
+        else { /* 没有信息文件 */
+            return 0;
+        }
+    }
+    if (fp != nullptr) {
+        ClientInfo* desClient = clientIDs[id];
+        char        buf[SENDBUF_MAX + 1];
         buf[SENDBUF_MAX] = '\0';
-        FILE* fp         = fopen(filename, "r");
-        while (fgets(buf + sizeof(Header), SENDBUF_MAX - sizeof(Header) + 1, fp) != nullptr) {
-            size_t msgLen = strlen(buf + sizeof(Header));
-            if (feof(fp) && buf[sizeof(Header)] == '\n') {
-                break;
+        long offset      = ftell(fp);
+        if (fgets(buf + sizeof(Header), SENDBUF_MAX - sizeof(Header) + 1, fp) != nullptr) {
+            if (!(feof(fp) && buf[sizeof(Header)] == '\n')) {
+                size_t msgLen = strlen(buf + sizeof(Header));
+                if (buf[sizeof(Header) + msgLen - 1] == '\n') {
+                    buf[sizeof(Header) + msgLen - 1] = '\0';
+                }
+                Header header;
+                header.length = htons(msgLen);
+                memcpy(buf, &header, sizeof(Header));
+                if ((long int)msgLen + (long int)sizeof(Header)
+                    > SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf)) {
+                    logInfo(0, logfp, "[DES_CLIENT %d] Send buffer can't hold saved message", id);
+                    fseek(fp, offset, SEEK_SET);
+                }
+                else {
+                    logInfo(0, logfp, "[DES_CLIENT %d] Copy %d bytes saved message to send buffer", id,
+                            msgLen + sizeof(Header));
+                    memcpy(desClient->sendPtr, buf, msgLen + sizeof(Header));
+                    desClient->sendPtr += msgLen + sizeof(Header);
+                    desClient->unsend += msgLen + sizeof(Header);
+                }
             }
-            if (buf[sizeof(Header) + msgLen - 1] == '\n') {
-                buf[sizeof(Header) + msgLen - 1] = '\0';
+        }
+        if (feof(fp)) {
+            fclose(fp);
+            msgRead.erase(id);
+            if (msgAppend.find(id) != msgAppend.end()) {
+                fclose(msgAppend[id].fp);
+                msgAppend.erase(id);
             }
-            Header header;
-            header.length = htons(msgLen);
-            memcpy(buf, &header, sizeof(Header));
-            if (msgLen + sizeof(Header) > SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf)) {
-                break;
+            if (remove(filename) < 0) {
+                return logError(-1, logfp, "[DES_CLIENT %d] Fail to remove file %s", id, filename);
             }
             else {
-            }
-
-            totalSize += msgLen;
-            if (feof(fp)) {
-                break;
+                return logInfo(0, logfp, "[DES_CLIENT %d] Remove file %s successfully", id, filename);
             }
         }
-        fclose(fp);
-        if (remove(filename) < 0) {
-            return logError(1, logfp, "[SERVER] remove error for file %s", filename);
-        }
-        return logInfo(0, logfp, "[CLIENT] Finish sending %zd bytes of text to client %d", totalSize, id);
     }
     return 0;
+}
+
+void RelayServer::sigIntHandler(int signum) {
+    exitFlag = 1;
+}
+
+sigfunc* RelayServer::signal(int signo, sigfunc* func) {
+    struct sigaction act, oact;
+
+    act.sa_handler = func;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+    if (signo == SIGPIPE || signo == SIGCHLD)
+        act.sa_flags |= SA_RESTART;
+
+    if (sigaction(signo, &act, &oact) < 0)
+        return (SIG_ERR);
+
+    return (oact.sa_handler);
 }
