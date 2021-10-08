@@ -1,18 +1,31 @@
 #include <arpa/inet.h>
+#include <byteswap.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/errno.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
-#define MAX_CMD_STR 100
+#define IS_LITTLE         \
+    (((union {            \
+         unsigned      x; \
+         unsigned char c; \
+     }){ 1 })             \
+         .c) /* 判断本机字节序是否是小端字节序*/
+
+#define MAX_CMD_STR 200
 
 #pragma pack(1)
 typedef struct Header {
-    uint16_t len;
+    uint16_t length; /* payload长度 */
+    uint32_t id;     /* 客户端编号 */
+    uint64_t sec;    /* UTC：秒数 */
+    uint64_t nsec;   /* UTC：纳秒数 */
 } Header;
 #pragma pack()
 
@@ -27,6 +40,12 @@ void    my_close(int fd);
 ssize_t my_readn(int fd, void* vptr, size_t n);
 ssize_t my_writen(int fd, const void* vptr, size_t n);
 int     my_connect(int fd, const struct sockaddr* sa, socklen_t salen);
+
+/* 将64字节变量从网络字节序变为主机字节序 */
+uint64_t ntoh64(uint64_t net64);
+
+/* 将64字节变量从主机字节序变为网络字节序 */
+uint64_t hton64(uint64_t host64);
 
 int main(int argc, char** argv) {
     /* 检查参数数量 */
@@ -57,7 +76,7 @@ int main(int argc, char** argv) {
 }
 
 void send_msg(FILE* fp, int sockfd) {
-    char   sendline[MAX_CMD_STR + 8 + 1], recvline[MAX_CMD_STR + 1], _exit_[5] = { 0 };
+    char   sendline[MAX_CMD_STR + sizeof(Header) + 1], recvline[MAX_CMD_STR + 1], _exit_[5] = { 0 };
     int    sendlen, recvlen, n_len;
     Header header;  // 收到的数据包的Header
 
@@ -70,8 +89,13 @@ void send_msg(FILE* fp, int sockfd) {
                 return;
             }
         }
-        n_len      = htons(sendlen);  // 之前去掉了一个\n
-        header.len = n_len;
+        n_len         = htons(sendlen);  // 之前去掉了一个\n
+        header.length = n_len;
+        header.id     = htonl(100);
+        struct timespec timestamp;
+        clock_gettime(CLOCK_REALTIME, &timestamp);
+        header.sec  = hton64(timestamp.tv_sec);
+        header.nsec = hton64(timestamp.tv_nsec);
         memcpy(sendline, &header, sizeof(Header));
         if (my_writen(sockfd, sendline, sendlen + sizeof(Header)) < 0) {
             perror("server terminated prematurely"), exit(1);
@@ -216,4 +240,18 @@ int my_connect(int fd, const struct sockaddr* sa, socklen_t salen) {
     int n;
     if ((n = connect(fd, sa, salen)) < 0)
         printf("%d\n", errno), perror("connect error");
+}
+
+uint64_t ntoh64(uint64_t net64) {
+    if (IS_LITTLE)
+        return bswap_64(net64);
+    else
+        return net64;
+}
+
+uint64_t hton64(uint64_t host64) {
+    if (IS_LITTLE)
+        return bswap_64(host64);
+    else
+        return host64;
 }

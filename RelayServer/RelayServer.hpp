@@ -2,18 +2,18 @@
 #include <map>
 #include <string>
 
-#define RECVBUF_MAX 1024 /* 服务器接收缓冲区大小 */
-#define SENDBUF_MAX 2048 /* 服务器发送缓冲区大小 */
+#define BUFFER_SIZE 100 /* 服务器为每个客户端分配的用户缓冲区大小 */
 
 typedef struct ClientInfo {
-    uint16_t cliID;
-    int      connfd;
-    char     recvBuf[RECVBUF_MAX];        /* 接收缓冲区 */
-    char     sendBuf[SENDBUF_MAX];        /* 发送缓冲区 */
-    size_t   unrecv     = sizeof(Header); /* 期望接收的数据大小 */
-    char*    recvPtr    = recvBuf;        /* 接收缓冲区指针 */
-    char*    sendPtr    = sendBuf;        /* 发送缓冲区指针 */
-    int      recvStatus = 0;              /* 0: 正在接收头部，非0：正在接收载荷 */
+    uint16_t    cliID;                     /* 客户ID（仅用于服务器区分客户端） */
+    int         connfd;                    /* 套接字文件描述符 */
+    char        usrBuf[BUFFER_SIZE];       /* 缓冲区 */
+    size_t      unrecv   = sizeof(Header); /* 期望接收的数据大小（仅用于判断是否读到报文头） */
+    size_t      recved   = 0;              /* 已经接收的数据量 */
+    int         recvFlag = 0;              /* 0: 正在接收头部，非0：正在接收载荷 */
+    Header      header;                    /* 正在处理报文的报头 */
+    ClientInfo* fakePeer = nullptr;        /* 用于保存文件内容假客户端 */
+    int         state    = 0;              /* 0:未关闭套接字 1:已关闭写的一端 */
 } ClientInfo;
 
 typedef struct File {
@@ -39,18 +39,22 @@ private:
     uint16_t                        nextID = 0;            /* 下一个可用的ID */
     size_t                          hSize  = 0;            /* 报文头部长度 */
     static int                      exitFlag;              /* SIGINT退出标志 */
+    int                             shutFlag = 0;          /* 是否已经把所有套接字写的一端关闭 */
+    int                             logFlag  = 1;          /* 写SIGINT的log */
 
     int         doit(const char* ip, const char* port);
-    int         handle_events(struct epoll_event* events, const int& number);
-    void        closeServer();
+    int         handleEvents(struct epoll_event* events, const int& number);
+    void        shutdownAll();
+    void        prepareExit();
     int         addClient(ClientInfo* client);
     int         removeClient(const int& connfd);
     void        updateNextID();
-    int         writeMsgToFile(const int& id, const void* buf, const size_t& size);
-    int         copySavedMsg(const int& id);
+    int         writeMsgToFile(const int& cliID, const void* buf, const size_t& size);
+    int         copySavedMsg(ClientInfo* selfC);
     static void sigIntHandler(int signum);
     static void sigPipeHandler(int signum);
     sigfunc*    signal(int signo, sigfunc* func);
+    uint16_t    handleHeader(struct Header* header, const uint16_t& cliID);
 
 public:
     RelayServer() {

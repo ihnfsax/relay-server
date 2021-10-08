@@ -79,28 +79,31 @@ int RelayServer::doit(const char* ip, const char* port) {
     addfd(epollfd, listenfd, 0, 0);
     setnonblocking(listenfd);
 
-    while (!exitFlag) {
+    while (true) {
         /* 等待事件 */
         int ready = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
         if (ready < 0) {
-            logError(-1, logfp, "RelayServer - server - epoll_wait error");
-            closeServer();
-            close(listenfd);
-            return 0;
+            logError(0, logfp, "RelayServer - server - epoll_wait error");
+            shutdownAll();
         }
         /* 处理事件 */
-        if (handle_events(events, ready) < 0) {
-            closeServer();
-            close(listenfd);
-            return 0;
+        if (handleEvents(events, ready) < 0) {
+            shutdownAll();
+        }
+        if (exitFlag) {
+            shutdownAll();
+            if (clientFDs.size() == 0) {
+                logInfo(0, logfp, "RelayServer - server - all connected sockets are closed");
+                prepareExit();
+                break;
+            }
         }
     }
-    closeServer();
-    close(listenfd);
+
     return 0;
 }
 
-int RelayServer::handle_events(struct epoll_event* events, const int& number) {
+int RelayServer::handleEvents(struct epoll_event* events, const int& number) {
     for (int i = 0; i < number; ++i) {
         int sockfd = events[i].data.fd;
         /* 监听套接字 */
@@ -120,135 +123,105 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
         }
         /* 已连接套接字 */
         else {
-            /* 有数据可读 */
-            if (events[i].events & EPOLLIN) {
-                assert(clientFDs.find(sockfd) != clientFDs.end());
-                int         srcID     = clientFDs[sockfd]->cliID;
-                ClientInfo* srcClient = clientIDs[srcID];
-                assert(clientIDs.find(srcID) != clientIDs.end());
-                int desID = counterPart(srcID);
-                /* 接收头部 */
-                if (clientFDs[sockfd]->recvStatus == 0) {
-                    assert(srcClient->unrecv != 0);
-                    ssize_t n = recv(sockfd, srcClient->recvPtr, srcClient->unrecv, 0);
-                    if (n == (ssize_t)srcClient->unrecv) { /* 接收完毕 */
-                        Header header;
-                        memcpy(&header, srcClient->recvBuf, sizeof(Header));
-                        size_t msgLen = (size_t)ntohs(header.length);
-                        if (msgLen <= RECVBUF_MAX && msgLen > 0) {
-                            srcClient->recvPtr    = srcClient->recvBuf;
-                            srcClient->unrecv     = msgLen;
-                            srcClient->recvStatus = 1;
-                        }
-                        else if (msgLen == 0) {
-                            srcClient->recvPtr    = srcClient->recvBuf;
-                            srcClient->unrecv     = sizeof(Header);
-                            srcClient->recvStatus = 0;
-                        }
-                        else {
-                            logInfo(-1, logfp,
-                                    "RelayServer - client %d - insufficient space available in receive buffer", srcID);
-                            removeClient(sockfd);
-                            continue;
-                        }
-                    }
-                    else if (n > 0 && n < (ssize_t)srcClient->unrecv) { /* 接收了一部分 */
-                        srcClient->recvPtr += n;
-                        srcClient->unrecv -= n;
-                    }
-                    else if (n == 0) { /* 遇到FIN */
-                        logInfo(-1, logfp, "RelayServer - client %d - receive FIN from client", srcID);
-                        removeClient(sockfd);
-                        continue;
-                    }
-                    else { /* 遇到错误 */
-                        if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "RelayServer - client %d - recv error", srcID);
-                            removeClient(sockfd);
-                            continue;
-                        }
-                    }
-                }
-                /* 接收载荷 */
-                if (clientFDs[sockfd]->recvStatus != 0) {
-                    assert(srcClient->unrecv != 0);
-                    ssize_t n = recv(sockfd, srcClient->recvPtr, srcClient->unrecv, 0);
-                    if (n == (ssize_t)srcClient->unrecv) { /* 接收完毕 */
-                        size_t msgLen = (srcClient->recvPtr - srcClient->recvBuf) + n;
-                        /* 如果另一端存在，则复制数据 */
-                        if (clientIDs.find(desID) != clientIDs.end()) {
-                            ClientInfo* desClient = clientIDs[desID];
-                            if (SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf)
-                                > (long int)sizeof(Header) + (long int)msgLen) {
-                                Header header;
-                                header.length = htons((uint16_t)msgLen);
-                                memcpy(desClient->sendPtr, &header, sizeof(Header));
-                                desClient->sendPtr += sizeof(Header);
-                                memcpy(desClient->sendPtr, srcClient->recvBuf, msgLen);
-                                desClient->sendPtr += msgLen;
-                            }
-                            else {
-                                logInfo(-1, logfp,
-                                        "RelayServer - client %d - insufficient space available in send buffer");
-                                /* 丢弃报文 */
-                            }
-                        }
-                        /* 否则将数据保存在文件 */
-                        else {
-                            writeMsgToFile(desID, srcClient->recvBuf, msgLen - 1);
-                        }
-                        /* 设置状态以接收新的报文 */
-                        srcClient->recvPtr    = srcClient->recvBuf;
-                        srcClient->unrecv     = sizeof(Header);
-                        srcClient->recvStatus = 0;
-                    }
-                    else if (n > 0 && n < (ssize_t)srcClient->unrecv) { /* 接收了一部分 */
-                        srcClient->recvPtr += n;
-                        srcClient->unrecv -= n;
-                    }
-                    else if (n == 0) { /* 遇到FIN */
-                        logInfo(-1, logfp, "RelayServer - client %d - receive FIN from client", srcID);
-                        removeClient(sockfd);
-                        continue;
-                    }
-                    else { /* 遇到错误 */
-                        if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "RelayServer - client %d - recv error", srcID);
-                            removeClient(sockfd);
-                            continue;
-                        }
-                    }
-                }
+            /* 初始检查与设置 */
+            assert(clientFDs.find(sockfd) != clientFDs.end());
+            int         selfID = clientFDs[sockfd]->cliID;
+            ClientInfo* selfC  = clientIDs[selfID];
+            assert(clientIDs.find(selfID) != clientIDs.end());
+            int         peerID = counterPart(selfID);
+            ClientInfo* peerC  = nullptr;
+            if (clientIDs.find(peerID) != clientIDs.end()) {
+                peerC = clientIDs[peerID];
+                assert(clientFDs.find(peerC->connfd) != clientFDs.end());
             }
-            /* 有空间可以发送数据 */
-            if (events[i].events & EPOLLOUT) {
-                assert(clientFDs.find(sockfd) != clientFDs.end());
-                ClientInfo* desClient = clientFDs[sockfd];
-                /* 转存保存了的数据 */
-                if (copySavedMsg(desClient->cliID) == -1) {
-                    logInfo(-1, logfp, "RelayServer - client %d - fail to copy saved message to send buffer",
-                            desClient->cliID);
+            /* 有数据可读，并且有空间可存 */
+            if ((events[i].events & EPOLLIN) && (BUFFER_SIZE - selfC->recved) > 0) {
+                ssize_t n = recv(sockfd, selfC->usrBuf + selfC->recved, BUFFER_SIZE - selfC->recved, 0);
+                if (n > 0) {
+                    while (true) {
+                        /* 报头或载荷接收完毕 */
+                        if ((size_t)n >= selfC->unrecv) {
+                            // 处理报头
+                            if (selfC->recvFlag == 0) {
+                                memcpy((char*)&selfC->header + (sizeof(Header) - selfC->unrecv),
+                                       selfC->usrBuf + selfC->recved, selfC->unrecv);
+                                size_t msgLen   = (size_t)handleHeader(&selfC->header, selfID);
+                                n               = n - selfC->unrecv;
+                                selfC->recved   = selfC->recved + selfC->unrecv;
+                                selfC->recvFlag = 1;
+                                selfC->unrecv   = msgLen;
+                            }
+                            // 处理载荷
+                            else {
+                                if (peerC == nullptr) {
+                                    writeMsgToFile(peerID, selfC->usrBuf + selfC->recved,
+                                                   selfC->unrecv - 1); /* 不能把/0写进文件 */
+                                    writeMsgToFile(peerID, "\n", 1);
+                                }
+                                n               = n - selfC->unrecv;
+                                selfC->recved   = selfC->recved + selfC->unrecv;
+                                selfC->recvFlag = 0;
+                                selfC->unrecv   = sizeof(Header);
+                            }
+                        }
+                        /* 只接受了一部分 */
+                        else {
+                            if (selfC->recvFlag == 1 && peerC == nullptr && n > 0) {
+                                writeMsgToFile(peerID, selfC->usrBuf + selfC->recved, n);
+                            }
+                            selfC->unrecv = selfC->unrecv - n;
+                            selfC->recved = selfC->recved + n;
+                            break;
+                        }
+                    }
+                }
+                else if (n == 0) {
+                    logInfo(0, logfp, "RelayServer - client %d - receive FIN from client", selfID);
+                    if (selfC->state == 0) { /* 之前未关闭连接，则直接关闭写 */
+                        shutdown(sockfd, SHUT_WR);
+                    }
+                    else {
+                        shutdown(sockfd, SHUT_RD); /* 之前关闭了读，则把写关闭 */
+                    }
+                    /* 直接关闭写的一端，不再写了，因为数据可能源源不断地来，我们不知道还得写多少 */
+                    removeClient(sockfd);
                     continue;
                 }
-                long unsend = desClient->sendPtr - desClient->sendBuf;
-                if (unsend > 0) {
-                    ssize_t n = send(sockfd, desClient->sendBuf, unsend, 0);
-                    if (n > 0) {
-                        unsend -= n;
-                        char* unsendPtr = desClient->sendPtr - unsend;
-                        memcpy(desClient->sendBuf, unsendPtr, unsend);
-                        desClient->sendPtr = desClient->sendBuf + unsend;
-                    }
-                    else if (n == 0) { /* 空间不足 */
+                else {
+                    if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
+                        logError(-1, logfp, "RelayServer - client %d - recv error", selfID);
+                        removeClient(sockfd);
                         continue;
                     }
-                    else { /* 遇到错误 */
-                        if (errno != EWOULDBLOCK) {
-                            logError(-1, logfp, "RelayServer - client %d - send error", desClient->cliID);
+                }
+                if (peerC == nullptr) {
+                    selfC->recved = 0;
+                }
+            }
+            /* 有数据需要发送，并且能够发送，并且未关闭写 */
+            if ((events[i].events & EPOLLOUT) && selfC->state != 1) {
+                int isExist = 0;
+                isExist     = copySavedMsg(selfC);
+                if (selfC->fakePeer != nullptr) {
+                    peerC = selfC->fakePeer;
+                }
+                if (peerC != nullptr && peerC->recved > 0) {
+                    ssize_t n = send(sockfd, peerC->usrBuf, peerC->recved, 0);
+                    if (n >= 0) {
+                        memcpy(peerC->usrBuf, peerC->usrBuf + n, peerC->recved - n);
+                        peerC->recved = peerC->recved - n;
+                    }
+                    else {
+                        if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
+                            logError(-1, logfp, "RelayServer - client %d - send error", selfID);
                             removeClient(sockfd);
                             continue;
                         }
                     }
+                }
+                if (selfC->fakePeer != nullptr && selfC->fakePeer->recved == 0 && !isExist) {
+                    delete selfC->fakePeer;
+                    selfC->fakePeer = nullptr;
                 }
             }
         }
@@ -256,23 +229,23 @@ int RelayServer::handle_events(struct epoll_event* events, const int& number) {
     return 0;
 }
 
-void RelayServer::closeServer() {
-    if (exitFlag)
-        logInfo(0, logfp, "RelayServer - server - received SIGINT signal");
-    std::vector<int> connfds;
-    for (auto const& cli : clientFDs)
-        connfds.push_back(cli.first);
-    for (auto const& connfd : connfds)
-        removeClient(connfd);
-    logInfo(0, logfp, "RelayServer - server - all connected sockets are closed");
-    for (auto file : msgRead) {
-        fclose(file.second.fp);
-        if (msgAppend.find(file.first) != msgAppend.end()) {
-            fclose(msgAppend[file.first].fp);
+void RelayServer::shutdownAll() {
+    if (shutFlag == 0) {
+        if (exitFlag && logFlag) {
+            logInfo(0, logfp, "RelayServer - server - received SIGINT signal");
+            logFlag = 0;
         }
-        remove(file.second.filename);
+        for (auto const& cli : clientFDs) {
+            if (cli.second->state == 0) {
+                shutdown(cli.first, SHUT_WR);
+                cli.second->state = 1;
+            }
+        }
+        close(listenfd);
+        delfd(epollfd, listenfd);
+        logInfo(0, logfp, "RelayServer - server - send FIN to all clients and stop listening");
     }
-    logInfo(0, logfp, "RelayServer - server - all read files are deleted");
+    shutFlag = 1;
 }
 
 int RelayServer::addClient(ClientInfo* client) {
@@ -327,18 +300,17 @@ int RelayServer::writeMsgToFile(const int& id, const void* buf, const size_t& si
         msgAppend[id] = file;
     }
     fwrite(buf, size, 1, fp);
-    fwrite("\n", 1, 1, fp);
     fflush(fp);
     return 0;
 }
 
-int RelayServer::copySavedMsg(const int& id) {
+int RelayServer::copySavedMsg(ClientInfo* selfC) {
     FILE* fp = nullptr;
     char  filename[NAME_MAX];
-    sprintf(filename, "MESSAGE_TO_%d.txt", id);
-    if (msgRead.find(id) != msgRead.end()) {
-        assert(msgRead[id].fp != nullptr);
-        fp = msgRead[id].fp;
+    sprintf(filename, "MESSAGE_TO_%d.txt", selfC->cliID);
+    if (msgRead.find(selfC->cliID) != msgRead.end()) {
+        assert(msgRead[selfC->cliID].fp != nullptr);
+        fp = msgRead[selfC->cliID].fp;
     }
     else {
         if (access(filename, F_OK) == 0) {
@@ -346,55 +318,60 @@ int RelayServer::copySavedMsg(const int& id) {
             File file;
             file.fp = fp;
             strcpy(file.filename, filename);
-            msgRead[id] = file;
+            msgRead[selfC->cliID] = file;
         }
         else { /* 没有信息文件 */
             return 0;
         }
     }
-    if (fp != nullptr) {
-        ClientInfo* desClient = clientIDs[id];
-        char        buf[SENDBUF_MAX + 1];
-        buf[SENDBUF_MAX] = '\0';
-        long offset      = ftell(fp);
-        if (fgets(buf + sizeof(Header), SENDBUF_MAX - sizeof(Header) + 1, fp) != nullptr) {
-            if (!(feof(fp) && buf[sizeof(Header)] == '\n')) {
-                size_t msgLen = strlen(buf + sizeof(Header));
-                if (buf[sizeof(Header) + msgLen - 1] == '\n') {
-                    buf[sizeof(Header) + msgLen - 1] = '\0';
+    assert(fp != nullptr);
+    if (selfC->fakePeer == nullptr) {
+        selfC->fakePeer         = new ClientInfo;
+        selfC->fakePeer->recved = 0;
+    }
+    ClientInfo* peerC = selfC->fakePeer;
+    while (true) {
+        ssize_t msgWindow = BUFFER_SIZE - (ssize_t)peerC->recved - (ssize_t)sizeof(Header);
+        if (msgWindow > 0) {
+            char* msgPtr = peerC->usrBuf + peerC->recved + sizeof(Header);
+            if (fgets(msgPtr, msgWindow, fp) != nullptr) {
+                if (!(feof(fp) && *msgPtr == '\n')) { /* 没有到文件末尾 */
+                    size_t msgLen = strlen(msgPtr);
+                    if (*(msgPtr + msgLen - 1) == '\n') {
+                        *(msgPtr + msgLen - 1) = '\0';
+                    }
+                    else {
+                        msgLen = msgLen + 1; /* 将\0包含进去 */
+                    }
+                    Header          header;
+                    struct timespec timestamp = getHeader(msgLen, 0, &header);
+                    memcpy(peerC->usrBuf + peerC->recved, &header, sizeof(Header));
+                    peerC->recved = peerC->recved + sizeof(Header) + msgLen;
+                    logInfo(0, logfp, "RelayServer - client %d - packet from file %s: <length: %hd, id: %d, time: %s>",
+                            selfC->cliID, filename, msgLen, 0, strftTime(&timestamp).c_str());
                 }
-                Header header;
-                header.length = htons(msgLen);
-                memcpy(buf, &header, sizeof(Header));
-                if ((long int)msgLen + (long int)sizeof(Header)
-                    > SENDBUF_MAX - (desClient->sendPtr - desClient->sendBuf)) {
-                    logInfo(0, logfp, "RelayServer - client %d - insufficient space available in receive buffer", id);
-                    fseek(fp, offset, SEEK_SET);
+            }
+            if (feof(fp)) {
+                fclose(fp);
+                msgRead.erase(selfC->cliID);
+                if (msgAppend.find(selfC->cliID) != msgAppend.end()) {
+                    fclose(msgAppend[selfC->cliID].fp);
+                    msgAppend.erase(selfC->cliID);
+                }
+                if (remove(filename) < 0) {
+                    return logError(0, logfp, "RelayServer - client %d - fail to remove file %s", selfC->cliID,
+                                    filename);
                 }
                 else {
-                    logInfo(0, logfp, "RelayServer - client %d - copy %d bytes saved message to send buffer", id,
-                            msgLen + sizeof(Header));
-                    memcpy(desClient->sendPtr, buf, msgLen + sizeof(Header));
-                    desClient->sendPtr += msgLen + sizeof(Header);
+                    return logInfo(0, logfp, "RelayServer - client %d - remove file %s", selfC->cliID, filename);
                 }
             }
         }
-        if (feof(fp)) {
-            fclose(fp);
-            msgRead.erase(id);
-            if (msgAppend.find(id) != msgAppend.end()) {
-                fclose(msgAppend[id].fp);
-                msgAppend.erase(id);
-            }
-            if (remove(filename) < 0) {
-                return logError(-1, logfp, "RelayServer - client %d - fail to remove file %s", id, filename);
-            }
-            else {
-                return logInfo(0, logfp, "RelayServer - client %d - remove file %s", id, filename);
-            }
+        else {
+            break;
         }
     }
-    return 0;
+    return 1;
 }
 
 void RelayServer::sigIntHandler(int signum) {
@@ -417,4 +394,27 @@ sigfunc* RelayServer::signal(int signo, sigfunc* func) {
         return (SIG_ERR);
 
     return (oact.sa_handler);
+}
+
+uint16_t RelayServer::handleHeader(struct Header* header, const uint16_t& cliID) {
+    uint16_t msgLen = ntohs(header->length);
+    if (logfp == nullptr)
+        return msgLen;
+    struct timespec timestamp;
+    timestamp.tv_sec  = ntoh64(header->sec);
+    timestamp.tv_nsec = ntoh64(header->nsec);
+    logInfo(0, logfp, "RelayServer - client %d - recv header: <length: %hd, id: %d, time: %s>", cliID, msgLen,
+            ntohl(header->id), strftTime(&timestamp).c_str());
+    return msgLen;
+}
+
+void RelayServer::prepareExit() {
+    for (auto file : msgRead) {
+        fclose(file.second.fp);
+        if (msgAppend.find(file.first) != msgAppend.end()) {
+            fclose(msgAppend[file.first].fp);
+        }
+        remove(file.second.filename);
+    }
+    logInfo(0, logfp, "RelayServer - server - all read files are deleted");
 }

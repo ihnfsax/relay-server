@@ -1,22 +1,38 @@
 #include <arpa/inet.h>
+#include <byteswap.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <sys/errno.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
-#define MAX_CMD_STR 100
+#define MAX_CMD_STR 200
+
+#define IS_LITTLE         \
+    (((union {            \
+         unsigned      x; \
+         unsigned char c; \
+     }){ 1 })             \
+         .c) /* 判断本机字节序是否是小端字节序*/
+
+#define PACKET_US_FORMAT ".%06ld"
 
 #pragma pack(1)
 typedef struct Header {
-    uint16_t len;
+    uint16_t length; /* payload长度 */
+    uint32_t id;     /* 客户端编号 */
+    uint64_t sec;    /* UTC：秒数 */
+    uint64_t nsec;   /* UTC：纳秒数 */
 } Header;
 #pragma pack()
 
-void    send_msg(FILE* fp, int sockfd);
+void    recv_msg(FILE* fp, int sockfd);
 void    my_err_quit(const char* fmt);
 void    my_inet_pton(int family, const char* strptr, void* addrptr);
 void    init_port(const char* strptr, in_port_t* addrptr);
@@ -27,6 +43,15 @@ void    my_close(int fd);
 ssize_t my_readn(int fd, void* vptr, size_t n);
 ssize_t my_writen(int fd, const void* vptr, size_t n);
 int     my_connect(int fd, const struct sockaddr* sa, socklen_t salen);
+
+/* 将64字节变量从网络字节序变为主机字节序 */
+uint64_t ntoh64(uint64_t net64);
+
+/* 将64字节变量从主机字节序变为网络字节序 */
+uint64_t hton64(uint64_t host64);
+
+/* 从timespec结构中获取本地时间格式化字符串 */
+std::string strftTime(struct timespec* timestamp);
 
 int main(int argc, char** argv) {
     /* 检查参数数量 */
@@ -47,7 +72,7 @@ int main(int argc, char** argv) {
 
     printf("[cli] server[%s:%s] is connected!\n", argv[1], argv[2]);
 
-    send_msg(stdin, sockfd);
+    recv_msg(stdin, sockfd);
 
     my_close(sockfd);
     printf("[cli] connfd is closed!\n");
@@ -56,7 +81,7 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-void send_msg(FILE* fp, int sockfd) {
+void recv_msg(FILE* fp, int sockfd) {
     char   sendline[MAX_CMD_STR + 8 + 1], recvline[MAX_CMD_STR + 1], _exit_[5] = { 0 };
     int    sendlen, recvlen, n_len;
     Header header;  // 收到的数据包的Header
@@ -66,13 +91,17 @@ void send_msg(FILE* fp, int sockfd) {
             fprintf(stderr, "echo_rpt: server terminated prematurely\n");
             return;
         }
-        recvlen = ntohs(header.len);
+        recvlen = ntohs(header.length);
         if (my_readn(sockfd, recvline, recvlen) != recvlen)  // 读取payload
         {
             fprintf(stderr, "echo_rpt: server terminated prematurely\n");
             return;
         }
-        fprintf(stdout, "[recv_client] %s\n", recvline);
+        struct timespec timestamp;
+        timestamp.tv_sec  = ntoh64(header.sec);
+        timestamp.tv_nsec = ntoh64(header.nsec);
+        fprintf(stdout, "packet: <length: %hd, id: %d, time: %s> : %s\n", recvlen, ntohl(header.id),
+                strftTime(&timestamp).c_str(), recvline);
     }
 }
 
@@ -161,7 +190,7 @@ ssize_t my_readn(int fd, void* vptr, size_t n) {
     ssize_t nread;
     char*   ptr;
 
-    ptr   = vptr;
+    ptr   = (char*)vptr;
     nleft = n;
     while (nleft > 0) {
         if ((nread = read(fd, ptr, nleft)) < 0) {
@@ -189,7 +218,7 @@ ssize_t my_writen(int fd, const void* vptr, size_t n) {
     size_t      nleft;
     ssize_t     nwritten;
     const char* ptr;
-    ptr   = vptr;
+    ptr   = (char*)vptr;
     nleft = n;
     while (nleft > 0) {
         if ((nwritten = write(fd, ptr, nleft)) <= 0) {
@@ -213,4 +242,28 @@ int my_connect(int fd, const struct sockaddr* sa, socklen_t salen) {
     int n;
     if ((n = connect(fd, sa, salen)) < 0)
         printf("%d\n", errno), perror("connect error");
+    return n;
+}
+
+uint64_t ntoh64(uint64_t net64) {
+    if (IS_LITTLE)
+        return bswap_64(net64);
+    else
+        return net64;
+}
+
+uint64_t hton64(uint64_t host64) {
+    if (IS_LITTLE)
+        return bswap_64(host64);
+    else
+        return host64;
+}
+
+std::string strftTime(struct timespec* timestamp) {
+    struct tm time0;
+    localtime_r(&(timestamp->tv_sec), &time0);
+    char currentTime[17];
+    strftime(currentTime, 10, "%H:%M:%S ", &time0);
+    sprintf(currentTime + 9, PACKET_US_FORMAT, timestamp->tv_nsec / 1000);
+    return std::string(currentTime);
 }
