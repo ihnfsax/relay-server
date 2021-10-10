@@ -20,7 +20,7 @@ int PressureGenerator::start(const char* ip, const char* port, int sessCount, in
         printf("The number of sessions must be less than %d\n", MAX_EVENT_NUMBER / 2);
         return -1;
     }
-    this->sessCount = (size_t)sessCount;
+    this->cliCount = (size_t)sessCount * 2;
     if (runTime <= 0) {
         printf("The test time must be positive\n");
     }
@@ -89,7 +89,7 @@ int PressureGenerator::doit(const char* ip, const char* port) {
 
     while (true) {
         /* 添加新客户端 */
-        if (clients.size() < sessCount && uncnNum < WAIT_CONN_MAX && shutFlag == 0) {
+        if (clients.size() < cliCount && uncnNum < WAIT_CONN_MAX && shutFlag == 0) {
             if (addClients(events) < 0) {
                 logInfo(0, logfp, "PressureGenerator - generator - too many errors during adding clients");
                 shutdownAll();
@@ -120,7 +120,7 @@ int PressureGenerator::doit(const char* ip, const char* port) {
 int PressureGenerator::addClients(struct epoll_event* events) {
     int errorTimes = ERROR_MAX;
     int connTimes  = CONN_SIZE;
-    while (clients.size() < sessCount && connTimes > 0) {
+    while (clients.size() < cliCount && connTimes > 0) {
         int sockfd;
         if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             logError(0, logfp, "PressureGenerator - generator - socket error");
@@ -215,6 +215,11 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
             --uncnNum;
             logInfo(0, logfp, "PressureGenerator - client %d - new client (c:%zd u:%zd a:%zd)[2]", sockfd, connNum,
                     uncnNum, connNum + uncnNum);
+            if (recordFlag == 0 && connNum >= cliCount) {
+                recordFlag = 1;
+                logInfo(0, logfp, "PressureGenerator - generator - %zd connected clients, start to send packets",
+                        connNum);
+            }
         }
         /* 初始检查与设置 */
         assert(clients[sockfd].state != -1);
@@ -288,8 +293,8 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                 continue; /* continue最外层的for */
             }
         }
-        /* 有空间可以发送数据 */
-        if ((events[i].events & EPOLLOUT) && clients[sockfd].state != 1) {
+        /* 有空间可以发送数据，并且要开始记录才能发送数据，并且不能是关闭了写的一端 */
+        if ((events[i].events & EPOLLOUT) && recordFlag == 1 && clients[sockfd].state != 1) {
             while (true) {
                 ssize_t n = 0;
                 if (buffer->sended < sizeof(Header)) {
