@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <assert.h>
+#include <byteswap.h>
 #include <chrono>
 #include <cstdint>
 #include <ctime>
@@ -25,16 +26,37 @@
 #define LINE_MAX 255                                       /* char in one line of log file */
 #define MAX_EVENT_NUMBER 30000                             /* 事件数 */
 #define counterPart(self) (self % 2 ? self - 1 : self + 1) /* 得到对端客户端ID */
+#define IS_LITTLE         \
+    (((union {            \
+         unsigned      x; \
+         unsigned char c; \
+     }){ 1 })             \
+         .c) /* 判断本机字节序是否是小端字节序*/
 
 /* 报文头结构 */
 #pragma pack(1)
 typedef struct Header {
     uint16_t length; /* payload长度 */
+    uint32_t id;     /* 客户端编号 */
+    uint64_t sec;    /* UTC：秒数 */
+    uint64_t nsec;   /* UTC：纳秒数 */
 } Header;
 #pragma pack()
 
 /* 获取时间字符串 */
 std::string prettyTime();
+
+/* 从timespec结构中获取本地时间格式化字符串 */
+std::string strftTime(struct timespec* timestamp);
+
+/* 将64字节变量从网络字节序变为主机字节序 */
+uint64_t ntoh64(uint64_t net64);
+
+/* 将64字节变量从主机字节序变为网络字节序 */
+uint64_t hton64(uint64_t host64);
+
+/* 获取一个自动计算当前时间的Header */
+struct timespec getHeader(uint16_t length, uint32_t id, Header* header);
 
 /* 打印非errno消息到log文件 */
 int logInfo(int returnValue, FILE* fp, const char* fmt, ...);

@@ -2,6 +2,8 @@
 
 #define LOGGER_PRETTY_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 #define LOGGER_PRETTY_MS_FORMAT ".%03d"
+#define PACKET_TIME_FORMAT "%H:%M:%S "
+#define PACKET_US_FORMAT ".%06ld"
 
 std::string prettyTime() {
     auto        tp           = std::chrono::system_clock::now();
@@ -16,6 +18,39 @@ std::string prettyTime() {
     string_size += std::snprintf(buffer + string_size, sizeof(buffer) - string_size, LOGGER_PRETTY_MS_FORMAT, ms);
 
     return std::string(buffer, buffer + string_size);
+}
+
+std::string strftTime(struct timespec* timestamp) {
+    struct tm time0;
+    localtime_r(&(timestamp->tv_sec), &time0);
+    char currentTime[17];
+    strftime(currentTime, 10, PACKET_TIME_FORMAT, &time0);
+    sprintf(currentTime + 9, PACKET_US_FORMAT, timestamp->tv_nsec / 1000);
+    return std::string(currentTime);
+}
+
+uint64_t ntoh64(uint64_t net64) {
+    if (IS_LITTLE)
+        return bswap_64(net64);
+    else
+        return net64;
+}
+
+uint64_t hton64(uint64_t host64) {
+    if (IS_LITTLE)
+        return bswap_64(host64);
+    else
+        return host64;
+}
+
+struct timespec getHeader(uint16_t length, uint32_t id, Header* header) {
+    header->length = htons(length);
+    header->id     = htonl(id);
+    struct timespec timestamp;
+    clock_gettime(CLOCK_REALTIME, &timestamp);
+    header->sec  = hton64(timestamp.tv_sec);
+    header->nsec = hton64(timestamp.tv_nsec);
+    return timestamp;
 }
 
 int logInfo(int returnValue, FILE* fp, const char* fmt, ...) {

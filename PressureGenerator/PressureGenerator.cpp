@@ -1,17 +1,17 @@
 #include "PressureGenerator.hpp"
 #include <vector>
 
-#define CONN_SIZE 10
+#define CONN_SIZE 2
 #define ERROR_MAX 10
+#define WAIT_CONN_MAX 128
+#define NANO_SEC 1000000000
 
-int PressureGenerator::timeoutFlag = 0;
-int PressureGenerator::exitFlag    = 0;
+int PressureGenerator::alrmFlag = 0;
+int PressureGenerator::intFlag  = 0;
+int PressureGenerator::exitFlag = 0;
 
-const char* str1          = "hjjjjjfdsafdasf dasfdasfewqreqw";
-const char* str2          = "fdsafasfdasfdasfdasfsaf";
-const char* msgs[MSG_NUM] = { str1, str2 };
-
-int PressureGenerator::start(const char* ip, const char* port, int sessCount, int runTime, int logFlag) {
+int PressureGenerator::start(const char* ip, const char* port, int sessCount, int runTime, int packetSize,
+                             int logFlag) {
     if (sessCount <= 0) {
         printf("The number of sessions must be positive\n");
         return -1;
@@ -25,6 +25,10 @@ int PressureGenerator::start(const char* ip, const char* port, int sessCount, in
         printf("The test time must be positive\n");
     }
     this->runTime = runTime;
+    if (packetSize <= (int)sizeof(Header)) {
+        printf("The packet size must be larger than header size (%zd)\n", sizeof(Header));
+    }
+    this->payloadSize = packetSize - sizeof(Header);
     if (status != 0) {
         printf("This PressureGenerator has been started.\n");
         return -1;
@@ -42,16 +46,31 @@ int PressureGenerator::start(const char* ip, const char* port, int sessCount, in
         logfp = nullptr;
         printf("No log file specified.\n");
     }
-    alarm(this->runTime);
+    /* 开始生成报文，并启动测试 */
+    generatePacket();
     logInfo(0, logfp, "PressureGenerator - generator - plan to run %d seconds", this->runTime);
+    alarm(this->runTime);
     int r = doit(ip, port);
     logInfo(0, logfp, "PressureGenerator - generator - generator shutdown");
+    double averageDelay =
+        (double)totalDelay.tv_sec / recvPacketNum + (double)totalDelay.tv_nsec / recvPacketNum / NANO_SEC;
+    logInfo(0, logfp, "PressureGenerator - generator - receive %lu packets; average delay: %.06lf", recvPacketNum,
+            averageDelay);
+    printf("tv_sec: %lu tv_nsec: %lu\n", totalDelay.tv_sec, totalDelay.tv_nsec);
+    printf("receive %lu packets; average delay: %.06lf\n", recvPacketNum, averageDelay);
     if (logfp != nullptr) {
         fclose(logfp);
         logfp = nullptr;
     }
     status = 0;
     return r;
+}
+
+void PressureGenerator::generatePacket() {
+    assert(payload == nullptr);
+    payload = new char[payloadSize];
+    memset(payload, 'M', payloadSize);
+    logInfo(0, logfp, "PressureGenerator - generator - generate %zd bytes payload", payloadSize);
 }
 
 int PressureGenerator::doit(const char* ip, const char* port) {
@@ -68,26 +87,33 @@ int PressureGenerator::doit(const char* ip, const char* port) {
     epollfd = epoll_create(1);
     assert(epollfd >= 0);
 
-    while (!timeoutFlag && !exitFlag) {
-        if (clients.size() < sessCount) {
+    while (true) {
+        /* 添加新客户端 */
+        if (clients.size() < sessCount && uncnNum < WAIT_CONN_MAX && shutFlag == 0) {
             if (addClients(events) < 0) {
                 logInfo(0, logfp, "PressureGenerator - generator - too many errors during adding clients");
-                closeGenerator();
-                return 0;
+                shutdownAll();
             }
         }
+        /* 等待事件 */
         int ready = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
         if (ready < 0) {
-            logError(-1, logfp, "PressureGenerator - generator - epoll_wait error");
-            closeGenerator();
-            return 0;
+            logError(0, logfp, "PressureGenerator - generator - epoll_wait error");
+            shutdownAll();
         }
-        if (handle_events(events, ready) < 0) {
-            closeGenerator();
-            return 0;
+        /* 处理事件 */
+        if (handleEvents(events, ready) < 0) {
+            shutdownAll();
+        }
+        if (exitFlag || shutFlag) {
+            shutdownAll();
+            if (clients.size() == 0) {
+                logInfo(0, logfp, "PressureGenerator - generator - all connected sockets are closed");
+                break;
+            }
         }
     }
-    closeGenerator();
+
     return 0;
 }
 
@@ -118,49 +144,62 @@ int PressureGenerator::addClients(struct epoll_event* events) {
                 continue;
             }
             else {
-                ClientInfo client;
-                client.connfd   = sockfd;
-                client.status   = -1; /* 设置状态为未连接 */
-                clients[sockfd] = client;
-                addfd(epollfd, sockfd, 1, 0); /* 添加套接字到epoll事件表 */
-                uncnNum++;
+                addOneClient(sockfd, -1);
             }
         }
         /* 直接连接建立 */
         else {
-            ClientInfo client;
-            client.connfd   = sockfd;
-            client.status   = 0;                /* 设置状态为已连接(等待接收头部) */
-            client.buffer   = new ClientBuffer; /* 分配缓冲区 */
-            clients[sockfd] = client;
-            addfd(epollfd, sockfd, 1, 0); /* 添加套接字到epoll事件表 */
-            logInfo(0, logfp, "PressureGenerator - client %d - new client (%zd connected; %zd unconnected)", sockfd,
-                    ++connNum, uncnNum);
+            addOneClient(sockfd, 0);
+            logInfo(0, logfp, "PressureGenerator - client %d - new client (c:%zd u:%zd a:%zd)[1]", sockfd, connNum,
+                    uncnNum, connNum + uncnNum);
         }
         connTimes--;
     }
     return 0;
 }
 
-void PressureGenerator::closeGenerator() {
-    if (timeoutFlag)
-        logInfo(0, logfp, "PressureGenerator - generator - received SIGALARM signal");
-    if (exitFlag)
-        logInfo(0, logfp, "PressureGenerator - generator - received SIGINT signal");
-    std::vector<int> connfds;
-    for (auto const& cli : clients)
-        connfds.push_back(cli.first);
-    for (auto const& connfd : connfds)
-        removeClient(connfd);
-    logInfo(0, logfp, "PressureGenerator - generator - all sockets are closed");
+void PressureGenerator::addOneClient(int sockfd, int state) {
+    assert(state == 0 || state == -1);
+    assert(clients.find(sockfd) == clients.end());
+    ClientInfo client;
+    client.connfd = sockfd;
+    client.state  = state;
+    if (state == 0) {
+        client.buffer          = new ClientBuffer;
+        client.buffer->sendPtr = this->payload;
+        ++connNum;
+    }
+    else {
+        ++uncnNum;
+    }
+    clients[sockfd] = client;
+    addfd(epollfd, sockfd, 1, 0); /* 添加套接字到epoll事件表 */
 }
 
-int PressureGenerator::handle_events(struct epoll_event* events, const int& number) {
+void PressureGenerator::shutdownAll() {
+    if (exitFlag && intFlag)
+        intFlag = logInfo(0, logfp, "PressureGenerator - generator - received SIGINT signal");
+    if (exitFlag && alrmFlag)
+        alrmFlag = logInfo(0, logfp, "PressureGenerator - generator - received SIGALARM signal");
+    if (shutFlag == 0) {
+        logInfo(0, logfp, "PressureGenerator - generator - all clients send FIN to server");
+    }
+    shutFlag = 1;
+    for (auto& cli : clients) {
+        if (cli.second.state == 0) {
+            shutdown(cli.first, SHUT_WR);
+            cli.second.state = 1;
+        }
+    }
+}
+
+int PressureGenerator::handleEvents(struct epoll_event* events, const int& number) {
     for (int i = 0; i < number; ++i) {
-        int sockfd = events[i].data.fd;
+        int continueFlag = 0;
+        int sockfd       = events[i].data.fd;
         assert(clients.find(sockfd) != clients.end());
         /* 如果是未连接套接字 */
-        if (clients[sockfd].status == -1) {
+        if (clients[sockfd].state == -1) {
             int       error;
             socklen_t len = sizeof(error);
             if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len) != 0) {
@@ -169,139 +208,126 @@ int PressureGenerator::handle_events(struct epoll_event* events, const int& numb
                 removeClient(sockfd);
                 continue;
             }
-            clients[sockfd].status = 0;                /* 设置状态为已连接(等待接收头部) */
-            clients[sockfd].buffer = new ClientBuffer; /* 分配缓冲区 */
-            logInfo(0, logfp, "PressureGenerator - client %d - new client (%zd connected; %zd unconnected)", sockfd,
-                    ++connNum, --uncnNum);
+            clients[sockfd].state           = 0;                /* 设置状态为已连接(等待接收头部) */
+            clients[sockfd].buffer          = new ClientBuffer; /* 分配缓冲区 */
+            clients[sockfd].buffer->sendPtr = this->payload;
+            ++connNum;
+            --uncnNum;
+            logInfo(0, logfp, "PressureGenerator - client %d - new client (c:%zd u:%zd a:%zd)[2]", sockfd, connNum,
+                    uncnNum, connNum + uncnNum);
         }
-        assert(clients[sockfd].status != -1);
+        /* 初始检查与设置 */
+        assert(clients[sockfd].state != -1);
         assert(clients[sockfd].buffer != nullptr);
+        assert(clients[sockfd].buffer->sendPtr != nullptr);
         ClientBuffer* buffer = clients[sockfd].buffer;
-        /* 如果可读 */
+        /* 如果可读，并且有空间容纳 */
         if (events[i].events & EPOLLIN) {
-            /* 接收头部 */
-            if (clients[sockfd].status == 0) {
-                assert(buffer->unrecv != 0);
-                ssize_t n = recv(sockfd, buffer->recvPtr, buffer->unrecv, 0);
-                if (n == (ssize_t)buffer->unrecv) { /* 接收完毕 */
-                    Header header;
-                    memcpy(&header, buffer->recvBuf, sizeof(Header));
-                    size_t msgLen = (size_t)ntohs(header.length);
-                    if (msgLen <= RECVBUF_MAX && msgLen > 0) {
-                        buffer->recvPtr        = buffer->recvBuf;
-                        buffer->unrecv         = msgLen;
-                        clients[sockfd].status = 1;
+            /* 不断地读取，直到没有数据可读 */
+            while (true) {
+                buffer->recved = 0;
+                ssize_t n      = recv(sockfd, buffer->usrBuf, BUFFER_SIZE, 0);
+                if (n > 0) {
+                    while (true) {
+                        /* 报头或载荷接收完毕 */
+                        if ((size_t)n >= buffer->unrecv) {
+                            // 处理报头
+                            if (buffer->recvFlag == 0) {
+                                memcpy((char*)&buffer->recvHeader + (sizeof(Header) - buffer->unrecv),
+                                       buffer->usrBuf + buffer->recved, buffer->unrecv);
+                                size_t msgLen = (size_t)handleHeader(&buffer->recvHeader, sockfd);
+                                recvPacketNum++; /* 报文数加1 */
+                                n                = n - buffer->unrecv;
+                                buffer->recved   = buffer->recved + buffer->unrecv;
+                                buffer->recvFlag = 1;
+                                buffer->unrecv   = msgLen;
+                            }
+                            // 处理载荷
+                            else {
+                                n                = n - buffer->unrecv;
+                                buffer->recved   = buffer->recved + buffer->unrecv;
+                                buffer->recvFlag = 0;
+                                buffer->unrecv   = sizeof(Header);
+                            }
+                        }
+                        /* 只接受了一部分 */
+                        else {
+                            if (buffer->recvFlag == 0) {
+                                memcpy((char*)&buffer->recvHeader + (sizeof(Header) - buffer->unrecv),
+                                       buffer->usrBuf + buffer->recved, n);
+                            }
+                            buffer->unrecv = buffer->unrecv - n;
+                            buffer->recved = buffer->recved + n;
+                            break;
+                        }
                     }
-                    else if (msgLen == 0) {
-                        buffer->recvPtr        = buffer->recvBuf;
-                        buffer->unrecv         = sizeof(Header);
-                        clients[sockfd].status = 0;
+                }
+                else if (n == 0) {
+                    logInfo(0, logfp, "PressureGenerator - client %d - receive FIN from server", sockfd);
+                    if (clients[sockfd].state == 0) { /* 之前未关闭连接，则直接关闭写 */
+                        shutdown(sockfd, SHUT_WR);
                     }
                     else {
-                        logInfo(-1, logfp,
-                                "PressureGenerator - client %d - insufficient space available in receive buffer",
-                                sockfd);
-                        removeClient(sockfd);
-                        continue;
+                        shutdown(sockfd, SHUT_RD); /* 之前关闭了写，则把读关闭 */
                     }
-                }
-                else if (n > 0 && n < (ssize_t)buffer->unrecv) { /* 接收了一部分 */
-                    buffer->recvPtr += n;
-                    buffer->unrecv -= n;
-                }
-                else if (n == 0) { /* 遇到FIN */
-                    logInfo(-1, logfp, "PressureGenerator - client %d - receive FIN from server", sockfd);
+                    /* 直接关闭写的一端，不再写了，因为数据可能源源不断地来，我们不知道还得写多少 */
                     removeClient(sockfd);
-                    continue;
+                    continueFlag = 1;
+                    break;
                 }
-                else { /* 遇到错误 */
-                    if (errno != EWOULDBLOCK) {
+                else {
+                    if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
                         logError(-1, logfp, "PressureGenerator - client %d - recv error", sockfd);
                         removeClient(sockfd);
-                        continue;
+                        continueFlag = 1;
                     }
+                    break; /* 读到没有数据了，退出 */
                 }
             }
-            /* 接收载荷 */
-            if (clients[sockfd].status == 1) {
-                assert(buffer->unrecv != 0);
-                ssize_t n = recv(sockfd, buffer->recvPtr, buffer->unrecv, 0);
-                if (n == (ssize_t)buffer->unrecv) { /* 接收完毕 */
-                    // TODO
-                    // size_t msgLen = (buffer->recvPtr - buffer->recvBuf) + n;
-                    // logInfo(0, logfp, "PressureGenerator - client %d - receive %zd bytes message from server",
-                    // sockfd,
-                    //         msgLen);
-                    /* 设置状态以接收新的报文 */
-                    buffer->recvPtr        = buffer->recvBuf;
-                    buffer->unrecv         = sizeof(Header);
-                    clients[sockfd].status = 0;
-                }
-                else if (n > 0 && n < (ssize_t)buffer->unrecv) { /* 接收了一部分 */
-                    buffer->recvPtr += n;
-                    buffer->unrecv -= n;
-                }
-                else if (n == 0) { /* 遇到FIN */
-                    logInfo(-1, logfp, "PressureGenerator - client %d - receive FIN from server", sockfd);
-                    removeClient(sockfd);
-                    continue;
-                }
-                else { /* 遇到错误 */
-                    if (errno != EWOULDBLOCK) {
-                        logError(-1, logfp, "PressureGenerator - client %d - recv error", sockfd);
-                        removeClient(sockfd);
-                        continue;
-                    }
-                }
+            if (continueFlag) {
+                continue; /* continue最外层的for */
             }
         }
         /* 有空间可以发送数据 */
-        if (events[i].events & EPOLLOUT) {
-            /* 复制数据 */
-            copyMsg(sockfd);
-            long unsend = buffer->sendPtr - buffer->sendBuf;
-            if (unsend > 0) {
-                ssize_t n = send(sockfd, buffer->sendBuf, unsend, 0);
-                if (n > 0) {
-                    unsend -= n;
-                    char* unsendPtr = buffer->sendPtr - unsend;
-                    memcpy(buffer->sendBuf, unsendPtr, unsend);
-                    buffer->sendPtr = buffer->sendBuf + unsend;
+        if ((events[i].events & EPOLLOUT) && clients[sockfd].state != 1) {
+            while (true) {
+                ssize_t n = 0;
+                if (buffer->sended < sizeof(Header)) {
+                    if (buffer->sended == 0) {
+                        getHeader(payloadSize, sockfd, &buffer->sendHeader);
+                    }
+                    n = send(sockfd, (char*)&buffer->sendHeader + buffer->sended, sizeof(Header) - buffer->sended, 0);
                 }
-                else if (n == 0) { /* 空间不足 */
-                    continue;
+                else {
+                    n = send(sockfd, buffer->sendPtr + buffer->sended - sizeof(Header),
+                             payloadSize - (buffer->sended - sizeof(Header)), 0);
+                }
+                if (n >= 0) {
+                    buffer->sended += n;
+                    if (buffer->sended == sizeof(Header) + payloadSize) {
+                        buffer->sended = 0;
+                    }
                 }
                 else { /* 遇到错误 */
                     if (errno != EWOULDBLOCK) {
                         logError(-1, logfp, "PressureGenerator - client %d - send error", sockfd);
                         removeClient(sockfd);
-                        continue;
+                        continueFlag = 1;
                     }
+                    break; /* 写到不能写了，退出 */
                 }
+            }
+            if (continueFlag) {
+                continue; /* continue最外层的for */
             }
         }
     }
     return 0;
 }
 
-void PressureGenerator::copyMsg(int sockfd) {
-    assert(clients.find(sockfd) != clients.end());
-    ClientBuffer* buffer = clients[sockfd].buffer;
-    size_t        idx    = (size_t)rand() % msgNum;
-    size_t        msgLen = strlen(msgs[idx]) + 1;
-    if (SENDBUF_MAX - (buffer->sendPtr - buffer->sendBuf) > (long int)sizeof(Header) + (long int)msgLen) {
-        Header header;
-        header.length = htons((uint16_t)msgLen);
-        memcpy(buffer->sendPtr, &header, sizeof(Header));
-        buffer->sendPtr += sizeof(Header);
-        memcpy(buffer->sendPtr, msgs[idx], msgLen);
-        buffer->sendPtr += msgLen;
-    }
-}
-
 int PressureGenerator::removeClient(const int& sockfd) {
     assert(clients.find(sockfd) != clients.end());
-    if (clients[sockfd].status == -1) {
+    if (clients[sockfd].state == -1) {
         uncnNum--;
     }
     else {
@@ -314,17 +340,19 @@ int PressureGenerator::removeClient(const int& sockfd) {
         logError(-1, logfp, "PressureGenerator - client %d - close error", sockfd);
     }
     delfd(epollfd, sockfd);
-    logInfo(0, logfp, "PressureGenerator - client %d - client left (%zd connected; %zd unconnected)", sockfd, connNum,
-            uncnNum);
+    logInfo(0, logfp, "PressureGenerator - client %d - client left (c:%zd u:%zd a:%zd)", sockfd, connNum, uncnNum,
+            connNum + uncnNum);
     return 0;
 }
 
 void PressureGenerator::sigIntHandler(int signum) {
     exitFlag = 1;
+    intFlag  = 1;
 }
 
 void PressureGenerator::sigAlrmHandler(int signum) {
-    timeoutFlag = 1;
+    exitFlag = 1;
+    alrmFlag = 1;
 }
 
 void PressureGenerator::sigPipeHandler(int signum) {
@@ -343,4 +371,64 @@ sigfunc* PressureGenerator::signal(int signo, sigfunc* func) {
         return (SIG_ERR);
 
     return (oact.sa_handler);
+}
+
+uint16_t PressureGenerator::handleHeader(struct Header* header, const int& sockfd) {
+    uint16_t        msgLen = ntohs(header->length);
+    struct timespec timestamp;
+    timestamp.tv_sec  = ntoh64(header->sec);
+    timestamp.tv_nsec = ntoh64(header->nsec);
+    addDelay(&timestamp);
+    // logInfo(0, logfp, "PressureGenerator - client %d - recv header: <length: %hd, id: %d, time: %s>", sockfd, msgLen,
+    //         ntohl(header->id), strftTime(&timestamp).c_str());
+    return msgLen;
+}
+
+void PressureGenerator::addDelay(struct timespec* timestamp) {
+    struct timespec timeNow;
+    clock_gettime(CLOCK_REALTIME, &timeNow);
+    if (timestamp->tv_nsec >= NANO_SEC) {
+        return;
+    }
+    if (timeNow.tv_sec < timestamp->tv_sec) {
+        return;
+    }
+    else if (timeNow.tv_sec == timestamp->tv_sec) {
+        if (timeNow.tv_nsec < timestamp->tv_nsec) {
+            return;
+        }
+        else {
+            totalDelay.tv_nsec += (timeNow.tv_nsec - timestamp->tv_nsec);
+            if (totalDelay.tv_nsec > NANO_SEC) {
+                totalDelay.tv_sec += totalDelay.tv_nsec / NANO_SEC;
+                totalDelay.tv_nsec %= NANO_SEC;
+            }
+        }
+    }
+    else {
+        totalDelay.tv_sec += (timeNow.tv_sec - timestamp->tv_sec);
+        if (timeNow.tv_nsec < timestamp->tv_nsec) {
+            if (totalDelay.tv_nsec > (timestamp->tv_nsec - timeNow.tv_nsec)) {
+                totalDelay.tv_nsec -= (timestamp->tv_nsec - timeNow.tv_nsec);
+            }
+            else {
+                totalDelay.tv_nsec = NANO_SEC - ((timestamp->tv_nsec - timeNow.tv_nsec) - totalDelay.tv_nsec);
+                totalDelay.tv_sec--;
+            }
+        }
+        else {
+            totalDelay.tv_nsec += (timeNow.tv_nsec - timestamp->tv_nsec);
+            if (totalDelay.tv_nsec > NANO_SEC) {
+                totalDelay.tv_sec += totalDelay.tv_nsec / NANO_SEC;
+                totalDelay.tv_nsec %= NANO_SEC;
+            }
+        }
+    }
+}
+
+void PressureGenerator::prepareExit() {
+    if (payload != nullptr) {
+        delete[] payload;
+        payload = nullptr;
+    }
 }
