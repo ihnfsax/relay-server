@@ -2,7 +2,8 @@
 #include <map>
 #include <string>
 
-#define BUFFER_SIZE 100 /* 服务器为每个客户端分配的用户缓冲区大小 */
+#define BUFFER_SIZE 4096 /* 服务器为每个客户端分配的用户缓冲区大小 */
+#define BACKLOG 128      /* listen队列总大小 */
 
 typedef struct ClientInfo {
     uint16_t    cliID;                     /* 客户ID（仅用于服务器区分客户端） */
@@ -11,9 +12,10 @@ typedef struct ClientInfo {
     size_t      unrecv   = sizeof(Header); /* 期望接收的数据大小（仅用于判断是否读到报文头） */
     size_t      recved   = 0;              /* 已经接收的数据量 */
     int         recvFlag = 0;              /* 0: 正在接收头部，非0：正在接收载荷 */
-    Header      header;                    /* 正在处理报文的报头 */
+    Header      header;                    /* 正在接收报文的报头 */
     ClientInfo* fakePeer = nullptr;        /* 用于保存文件内容假客户端 */
     int         state    = 0;              /* 0:未关闭套接字 1:已关闭写的一端 */
+    uint32_t    id;                        /* 报文中的id，DEBUG用 */
 } ClientInfo;
 
 typedef struct File {
@@ -36,11 +38,11 @@ private:
     char                            logFilename[NAME_MAX]; /* log文件名 */
     int                             listenfd;              /* 监听套接字 */
     int                             epollfd;               /* epoll描述符 */
-    uint16_t                        nextID = 0;            /* 下一个可用的ID */
-    size_t                          hSize  = 0;            /* 报文头部长度 */
-    static int                      exitFlag;              /* SIGINT退出标志 */
+    uint16_t                        nextID   = 0;          /* 下一个可用的ID */
+    size_t                          hSize    = 0;          /* 报文头部长度 */
     int                             shutFlag = 0;          /* 是否已经把所有套接字写的一端关闭 */
-    int                             logFlag  = 1;          /* 写SIGINT的log */
+    static int                      exitFlag;              /* SIGINT退出标志 */
+    static int                      logFlag;               /* 写SIGINT的log */
 
     int         doit(const char* ip, const char* port);
     int         handleEvents(struct epoll_event* events, const int& number);
@@ -58,6 +60,7 @@ private:
 
 public:
     RelayServer() {
+        logFlag  = 0;
         exitFlag = 0;
         signal(SIGINT, sigIntHandler);
         signal(SIGPIPE, sigPipeHandler);
