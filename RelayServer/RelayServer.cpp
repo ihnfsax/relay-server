@@ -26,7 +26,7 @@ int RelayServer::start(const char* ip, const char* port, int logFlag) {
         printf("No log file specified.\n");
     }
     int r = doit(ip, port);
-    logInfo(0, logfp, "RelayServer - server - server shutdown");
+    logInfo(0, logfp, "RelayServer - server - server shutdowns");
     if (logfp != nullptr) {
         fclose(logfp);
         logfp = nullptr;

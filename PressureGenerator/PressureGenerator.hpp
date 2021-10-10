@@ -32,7 +32,7 @@ private:
     char                      logFilename[NAME_MAX];   /* log文件名 */
     pid_t                     pid;                     /* 进程ID */
     int                       epollfd;                 /* epoll描述符 */
-    size_t                    sessCount   = 0;         /* 要求的会话数 */
+    size_t                    cliCount    = 0;         /* 要求的会话数 */
     size_t                    payloadSize = 0;         /* 每个报文的载荷大小 */
     size_t                    runTime     = 0;         /* 要求的运行时间 */
     size_t                    connNum     = 0;         /* 已连接客户端数量 */
@@ -41,6 +41,7 @@ private:
     u_long                    recvPacketNum = 0;       /* 接收到的报文总数量 */
     char*                     payload       = nullptr; /* 初始化的数据包 */
     int                       shutFlag      = 0;       /* 是否已经把所有套接字写的一端关闭 */
+    int                       recordFlag    = 0;       /* 是否开始发送报文 */
     static int                alrmFlag;                /* 写SIGALRM的log的标志 */
     static int                intFlag;                 /* 写SIGINT的log的标志 */
     static int                exitFlag;                /* 捕获信号后，退出标志 */
