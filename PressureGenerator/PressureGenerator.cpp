@@ -51,13 +51,20 @@ int PressureGenerator::start(const char* ip, const char* port, int sessCount, in
     logInfo(0, logfp, "PressureGenerator - generator - plan to run %d seconds", this->runTime);
     alarm(this->runTime);
     int r = doit(ip, port);
-    logInfo(0, logfp, "PressureGenerator - generator - generator shutdown");
-    double averageDelay =
-        (double)totalDelay.tv_sec / recvPacketNum + (double)totalDelay.tv_nsec / recvPacketNum / NANO_SEC;
-    logInfo(0, logfp, "PressureGenerator - generator - receive %lu packets; average delay: %.06lf", recvPacketNum,
-            averageDelay);
-    printf("tv_sec: %lu tv_nsec: %lu\n", totalDelay.tv_sec, totalDelay.tv_nsec);
-    printf("receive %lu packets; average delay: %.06lf\n", recvPacketNum, averageDelay);
+    logInfo(0, logfp, "PressureGenerator - generator - generator shutdowns");
+    if (recordFlag == 0) {
+        logInfo(0, logfp, "PressureGenerator - generator - shutdowns before the number of clients reaches %zd",
+                this->cliCount);
+        logInfo(0, logfp, "PressureGenerator - generator - no statistics were recorded");
+    }
+    else {
+        double averageDelay =
+            (double)totalDelay.tv_sec / recvPacketNum + (double)totalDelay.tv_nsec / recvPacketNum / NANO_SEC;
+        logInfo(0, logfp, "PressureGenerator - generator - receive %lu packets; average delay: %.06lf", recvPacketNum,
+                averageDelay);
+        // printf("tv_sec: %lu tv_nsec: %lu\n", totalDelay.tv_sec, totalDelay.tv_nsec);
+        printf("receive %lu packets; average delay: %.06lf\n", recvPacketNum, averageDelay);
+    }
     if (logfp != nullptr) {
         fclose(logfp);
         logfp = nullptr;
