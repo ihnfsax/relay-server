@@ -3,7 +3,7 @@
 
 #define CONN_SIZE 2
 #define ERROR_MAX 10
-#define WAIT_CONN_MAX 128
+#define WAIT_CONN_MAX 200
 #define NANO_SEC 1000000000
 
 int PressureGenerator::alrmFlag = 0;
