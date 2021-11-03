@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <wait.h>
 
+#define NANO_SEC 1000000000
 #define NAME_MAX 255                                       /* chars in a file name */
 #define LINE_MAX 255                                       /* char in one line of log file */
 #define MAX_EVENT_NUMBER 30000                             /* 事件数 */

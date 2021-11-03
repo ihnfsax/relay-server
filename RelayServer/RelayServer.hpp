@@ -2,7 +2,7 @@
 #include <map>
 #include <string>
 
-#define BUFFER_SIZE 4096 /* 服务器为每个客户端分配的用户缓冲区大小 */
+#define BUFFER_SIZE 8192 /* 服务器为每个客户端分配的用户缓冲区大小 */
 #define BACKLOG 128      /* listen队列总大小 */
 
 typedef struct ClientInfo {
@@ -43,6 +43,18 @@ private:
     int                             shutFlag = 0;          /* 是否已经把所有套接字写的一端关闭 */
     static int                      exitFlag;              /* SIGINT退出标志 */
     static int                      logFlag;               /* 写SIGINT的log */
+    uint64_t                        s_recvNoSpace = 0;     /* 可以接收但没有足够的应用缓冲区的次数 */
+    uint64_t                        s_recvBytes   = 0;     /* 接收到的数据数量 */
+    uint64_t                        s_recvPackets = 0;     /* 收到到报文数量 */
+    uint64_t                        s_recvSuccess = 0;     /* 接收到数据的次数 */
+    uint64_t                        s_recvEAGAIN  = 0;     /* recv 返回EWOULDBLOCK的次数 */
+    uint64_t                        s_recvError   = 0;     /* recv 返回其他错误的次数 */
+    uint64_t                        s_recvFINs    = 0;     /* recv 返回0的次数 */
+    uint64_t                        s_sendNoData  = 0;     /* 可写但无数据可发的次数 */
+    uint64_t                        s_sendBytes   = 0;     /* 发送的数据量 */
+    uint64_t                        s_sendSuccess = 0;     /* 成功发送数据的次数 */
+    uint64_t                        s_sendEAGAIN  = 0;     /* send 返回EWOULDBLOCK的次数 */
+    uint64_t                        s_sendError   = 0;     /* send 返回其他错误的次数 */
 
     int         doit(const char* ip, const char* port);
     int         handleEvents(struct epoll_event* events, const int& number);
@@ -57,6 +69,7 @@ private:
     static void sigPipeHandler(int signum);
     sigfunc*    signal(int signo, sigfunc* func);
     uint16_t    handleHeader(struct Header* header, const uint16_t& cliID);
+    void        printStatistics();
 
 public:
     RelayServer() {

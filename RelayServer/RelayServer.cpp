@@ -27,6 +27,8 @@ int RelayServer::start(const char* ip, const char* port, int logFlag) {
     }
     int r = doit(ip, port);
     logInfo(0, logfp, "RelayServer - server - server shutdowns");
+    printf("Server shutdowns\n");
+    printStatistics();
     if (logfp != nullptr) {
         fclose(logfp);
         logfp = nullptr;
@@ -34,6 +36,38 @@ int RelayServer::start(const char* ip, const char* port, int logFlag) {
     status = 0;
     return r;
 }
+
+void RelayServer::printStatistics() {
+    logInfo(0, logfp, "RelayServer - server - Statistics:");
+    logInfo(0, logfp, "RelayServer - server - usrBufferSize: %d", BUFFER_SIZE);
+    logInfo(0, logfp, "RelayServer - server - recvBytes: %lu", s_recvBytes);
+    logInfo(0, logfp, "RelayServer - server - recvPackets: %lu", s_recvPackets);
+    logInfo(0, logfp, "RelayServer - server - recvFINs: %lu", s_recvFINs);
+    logInfo(0, logfp, "RelayServer - server - recvNoSpace: %lu", s_recvNoSpace);
+    logInfo(0, logfp, "RelayServer - server - recvSuccess: %lu", s_recvSuccess);
+    logInfo(0, logfp, "RelayServer - server - recvEAGAIN: %lu", s_recvEAGAIN);
+    logInfo(0, logfp, "RelayServer - server - recvError: %lu", s_recvError);
+    logInfo(0, logfp, "RelayServer - server - sendBytes: %lu", s_sendBytes);
+    logInfo(0, logfp, "RelayServer - server - sendNoData: %lu", s_sendNoData);
+    logInfo(0, logfp, "RelayServer - server - sendSuccess: %lu", s_sendSuccess);
+    logInfo(0, logfp, "RelayServer - server - sendEAGAIN: %lu", s_sendEAGAIN);
+    logInfo(0, logfp, "RelayServer - server - sendError: %lu", s_sendError);
+    printf("Server statistics:\n\n");
+    printf("usrBufferSize: %d\n\n", BUFFER_SIZE);
+    printf("recvBytes: %lu\n", s_recvBytes);
+    printf("recvPackets: %lu\n", s_recvPackets);
+    printf("recvFINs: %lu\n", s_recvFINs);
+    printf("recvNoSpace: %lu\n", s_recvNoSpace);
+    printf("recvSuccess: %lu\n", s_recvSuccess);
+    printf("recvEAGAIN: %lu\n", s_recvEAGAIN);
+    printf("recvError: %lu\n\n", s_recvError);
+    printf("sendBytes: %lu\n", s_sendBytes);
+    printf("sendNoData: %lu\n", s_sendNoData);
+    printf("sendSuccess: %lu\n", s_sendSuccess);
+    printf("sendEAGAIN: %lu\n", s_sendEAGAIN);
+    printf("sendError: %lu\n", s_sendError);
+}
+
 /* 返回值：-1表示出现错误终止，0表示被SIGINT信号终止 */
 int RelayServer::doit(const char* ip, const char* port) {
     /* 初始化地址结构 */
@@ -119,6 +153,7 @@ int RelayServer::handleEvents(struct epoll_event* events, const int& number) {
                 }
                 ClientInfo* client = new ClientInfo;
                 client->connfd     = connfd;
+                setnonblocking(connfd);
                 addClient(client);
             }
         }
@@ -138,10 +173,15 @@ int RelayServer::handleEvents(struct epoll_event* events, const int& number) {
             if (peerC == nullptr) {
                 selfC->recved = 0;
             }
+            if ((events[i].events & EPOLLIN) && (BUFFER_SIZE - selfC->recved) == 0) {
+                s_recvNoSpace++;
+            }
             /* 有数据可读，并且有空间可存 */
             if ((events[i].events & EPOLLIN) && (BUFFER_SIZE - selfC->recved) > 0) {
                 ssize_t n = recv(sockfd, selfC->usrBuf + selfC->recved, BUFFER_SIZE - selfC->recved, 0);
                 if (n > 0) {
+                    s_recvSuccess++;
+                    s_recvBytes += n;
                     while (true) {
                         /* 报头或载荷接收完毕 */
                         if ((size_t)n >= selfC->unrecv) {
@@ -149,7 +189,8 @@ int RelayServer::handleEvents(struct epoll_event* events, const int& number) {
                             if (selfC->recvFlag == 0) {
                                 memcpy((char*)&selfC->header + (sizeof(Header) - selfC->unrecv),
                                        selfC->usrBuf + selfC->recved, selfC->unrecv);
-                                size_t msgLen   = (size_t)handleHeader(&selfC->header, selfID);
+                                size_t msgLen = (size_t)handleHeader(&selfC->header, selfID);
+                                s_recvPackets++;
                                 n               = n - selfC->unrecv;
                                 selfC->recved   = selfC->recved + selfC->unrecv;
                                 selfC->recvFlag = 1;
@@ -184,6 +225,7 @@ int RelayServer::handleEvents(struct epoll_event* events, const int& number) {
                     }
                 }
                 else if (n == 0) {
+                    s_recvFINs++;
                     logInfo(0, logfp, "RelayServer - client %d - receive FIN from client (id:%u)", selfID, selfC->id);
                     if (selfC->state == 0) { /* 之前未关闭连接，则直接关闭写 */
                         shutdown(sockfd, SHUT_WR);
@@ -191,15 +233,20 @@ int RelayServer::handleEvents(struct epoll_event* events, const int& number) {
                     else {
                         shutdown(sockfd, SHUT_RD); /* 之前关闭了写，则把读关闭 */
                     }
-                    /* 直接关闭写的一端，不再写了，因为数据可能源源不断地来，我们不知道还得写多少 */
+                    /* 直接关闭写的一端，不再写了，因为数据可能源源不断地来，我们不知道还得写多少
+                     */
                     removeClient(sockfd);
                     continue; /* continue最外层的for */
                 }
                 else {
                     if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
+                        s_recvError++;
                         logError(-1, logfp, "RelayServer - client %d - recv error (id:%u)", selfID, selfC->id);
                         removeClient(sockfd);
                         continue; /* continue最外层的for */
+                    }
+                    else {
+                        s_recvEAGAIN++;
                     }
                 }
                 if (peerC == nullptr) {
@@ -209,21 +256,30 @@ int RelayServer::handleEvents(struct epoll_event* events, const int& number) {
             /* 有数据需要发送，并且能够发送，并且未关闭写 */
             if ((events[i].events & EPOLLOUT) && selfC->state != 1) {
                 int isExist = 0;
-                isExist     = copySavedMsg(selfC);
+                // isExist     = copySavedMsg(selfC);
                 if (selfC->fakePeer != nullptr) {
                     peerC = selfC->fakePeer;
+                }
+                if (peerC != nullptr && peerC->recved == 0) {
+                    s_sendNoData++;
                 }
                 if (peerC != nullptr && peerC->recved > 0) {
                     ssize_t n = send(sockfd, peerC->usrBuf, peerC->recved, 0);
                     if (n >= 0) {
+                        s_sendSuccess++;
+                        s_sendBytes += n;
                         memcpy(peerC->usrBuf, peerC->usrBuf + n, peerC->recved - n);
                         peerC->recved = peerC->recved - n;
                     }
                     else {
                         if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
+                            s_sendError++;
                             logError(-1, logfp, "RelayServer - client %d - send error (id:%u)", selfID, selfC->id);
                             removeClient(sockfd);
                             continue; /* continue最外层的for */
+                        }
+                        else {
+                            s_sendEAGAIN++;
                         }
                     }
                 }
@@ -356,7 +412,9 @@ int RelayServer::copySavedMsg(ClientInfo* selfC) {
                     struct timespec timestamp = getHeader(msgLen, 0, &header);
                     memcpy(peerC->usrBuf + peerC->recved, &header, sizeof(Header));
                     peerC->recved = peerC->recved + sizeof(Header) + msgLen;
-                    logInfo(0, logfp, "RelayServer - client %d - packet from file %s: <length: %hd, id: %d, time: %s>",
+                    logInfo(0, logfp,
+                            "RelayServer - client %d - packet from file %s: <length: "
+                            "%hd, id: %d, time: %s>",
                             selfC->cliID, filename, msgLen, 0, strftTime(&timestamp).c_str());
                 }
             }
@@ -414,7 +472,8 @@ uint16_t RelayServer::handleHeader(struct Header* header, const uint16_t& cliID)
     // struct timespec timestamp;
     // timestamp.tv_sec  = ntoh64(header->sec);
     // timestamp.tv_nsec = ntoh64(header->nsec);
-    // logInfo(0, logfp, "RelayServer - client %d - recv header: <length: %hd, id: %d, time: %s>", cliID, msgLen,
+    // logInfo(0, logfp, "RelayServer - client %d - recv header: <length: %hd, id:
+    // %d, time: %s>", cliID, msgLen,
     //         ntohl(header->id), strftTime(&timestamp).c_str());
     return msgLen;
 }

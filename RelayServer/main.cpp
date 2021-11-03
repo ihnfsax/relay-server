@@ -6,6 +6,6 @@ int main(int argc, char** argv) {
         return 0;
     }
     RelayServer server;
-    server.start(argv[1], argv[2], 0);
+    server.start(argv[1], argv[2], 1);
     return 0;
 }

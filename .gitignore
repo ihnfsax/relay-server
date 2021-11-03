@@ -1,5 +1,6 @@
 .vscode/
 build/
+.clang-format
 RelayServer/.clang-format
 PressureGenerator/.clang-format
 !.gitignore

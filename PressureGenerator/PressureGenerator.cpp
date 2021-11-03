@@ -4,7 +4,6 @@
 #define CONN_SIZE 2
 #define ERROR_MAX 10
 #define WAIT_CONN_MAX 200
-#define NANO_SEC 1000000000
 
 int PressureGenerator::alrmFlag = 0;
 int PressureGenerator::intFlag  = 0;
@@ -58,12 +57,14 @@ int PressureGenerator::start(const char* ip, const char* port, int sessCount, in
         logInfo(0, logfp, "PressureGenerator - generator - no statistics were recorded");
     }
     else {
-        double averageDelay =
-            (double)totalDelay.tv_sec / recvPacketNum + (double)totalDelay.tv_nsec / recvPacketNum / NANO_SEC;
-        logInfo(0, logfp, "PressureGenerator - generator - receive %lu packets; average delay: %.06lf", recvPacketNum,
-                averageDelay);
-        // printf("tv_sec: %lu tv_nsec: %lu\n", totalDelay.tv_sec, totalDelay.tv_nsec);
-        printf("receive %lu packets; average delay: %.06lf\n", recvPacketNum, averageDelay);
+        // g_averageDelay =
+        //     (double)g_totalDelay.tv_sec / g_recvPackets + (double)g_totalDelay.tv_nsec / g_recvPackets / NANO_SEC;
+        g_averageDelay                        = g_totalDelay / g_recvPackets;
+        std::chrono::duration<double> elapsed = endTime - startTime;
+        g_testTime                            = elapsed.count();
+        g_recvSpeed                           = (uint64_t)((double)g_recvBytes / g_testTime);
+        g_sendSpeed                           = (uint64_t)((double)g_sendBytes / g_testTime);
+        printStatistics();
     }
     if (logfp != nullptr) {
         fclose(logfp);
@@ -71,6 +72,45 @@ int PressureGenerator::start(const char* ip, const char* port, int sessCount, in
     }
     status = 0;
     return r;
+}
+
+void PressureGenerator::printStatistics() {
+    logInfo(0, logfp, "PressureGenerator - generator - Statistics:");
+    logInfo(0, logfp, "PressureGenerator - generator - usrBufferSize: %d", BUFFER_SIZE);
+    logInfo(0, logfp, "PressureGenerator - generator - packetSize: %zd", payloadSize + sizeof(Header));
+    logInfo(0, logfp, "PressureGenerator - generator - testTime: %lf", g_testTime);
+    logInfo(0, logfp, "PressureGenerator - generator - averageDelay: %lf", g_averageDelay);
+    logInfo(0, logfp, "PressureGenerator - generator - recvBytes: %lu", g_recvBytes);
+    logInfo(0, logfp, "PressureGenerator - generator - recvSpeed: %lu", g_recvSpeed);
+    logInfo(0, logfp, "PressureGenerator - generator - recvPackets: %lu", g_recvPackets);
+    logInfo(0, logfp, "PressureGenerator - generator - recvFINs: %lu", g_recvFINs);
+    logInfo(0, logfp, "PressureGenerator - generator - recvSuccess: %lu", g_recvSuccess);
+    logInfo(0, logfp, "PressureGenerator - generator - recvEAGAIN: %lu", g_recvEAGAIN);
+    logInfo(0, logfp, "PressureGenerator - generator - recvError: %lu", g_recvError);
+    logInfo(0, logfp, "PressureGenerator - generator - sendBytes: %lu", g_sendBytes);
+    logInfo(0, logfp, "PressureGenerator - generator - sendSpeed: %lu", g_sendSpeed);
+    logInfo(0, logfp, "PressureGenerator - generator - sendPackets: %lu", g_sendPackets);
+    logInfo(0, logfp, "PressureGenerator - generator - sendSuccess: %lu", g_sendSuccess);
+    logInfo(0, logfp, "PressureGenerator - generator - sendEAGAIN: %lu", g_sendEAGAIN);
+    logInfo(0, logfp, "PressureGenerator - generator - sendError: %lu", g_sendError);
+    printf("PressureGenerator statistics:\n\n");
+    printf("usrBufferSize: %d\n", BUFFER_SIZE);
+    printf("packetSize: %zd\n", payloadSize + sizeof(Header));
+    printf("testTime: %lf\n", g_testTime);
+    printf("averageDelay: %lf\n\n", g_averageDelay);
+    printf("recvBytes: %lu\n", g_recvBytes);
+    printf("recvSpeed: %lu\n", g_recvSpeed);
+    printf("recvPackets: %lu\n", g_recvPackets);
+    printf("recvFINs: %lu\n", g_recvFINs);
+    printf("recvSuccess: %lu\n", g_recvSuccess);
+    printf("recvEAGAIN: %lu\n", g_recvEAGAIN);
+    printf("recvError: %lu\n\n", g_recvError);
+    printf("sendBytes: %lu\n", g_sendBytes);
+    printf("sendSpeed: %lu\n", g_sendSpeed);
+    printf("sendPackets: %lu\n", g_sendPackets);
+    printf("sendSuccess: %lu\n", g_sendSuccess);
+    printf("sendEAGAIN: %lu\n", g_sendEAGAIN);
+    printf("sendError: %lu\n", g_sendError);
 }
 
 void PressureGenerator::generatePacket() {
@@ -189,6 +229,7 @@ void PressureGenerator::shutdownAll() {
     if (exitFlag && alrmFlag)
         alrmFlag = logInfo(0, logfp, "PressureGenerator - generator - received SIGALARM signal");
     if (shutFlag == 0) {
+        endTime = std::chrono::steady_clock::now();
         logInfo(0, logfp, "PressureGenerator - generator - all clients send FIN to server");
     }
     shutFlag = 1;
@@ -226,6 +267,7 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                 recordFlag = 1;
                 logInfo(0, logfp, "PressureGenerator - generator - %zd connected clients, start to send packets",
                         connNum);
+                startTime = std::chrono::steady_clock::now();
             }
         }
         /* 初始检查与设置 */
@@ -240,6 +282,8 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                 buffer->recved = 0;
                 ssize_t n      = recv(sockfd, buffer->usrBuf, BUFFER_SIZE, 0);
                 if (n > 0) {
+                    g_recvSuccess++;
+                    g_recvBytes += n;
                     while (true) {
                         /* 报头或载荷接收完毕 */
                         if ((size_t)n >= buffer->unrecv) {
@@ -248,7 +292,7 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                                 memcpy((char*)&buffer->recvHeader + (sizeof(Header) - buffer->unrecv),
                                        buffer->usrBuf + buffer->recved, buffer->unrecv);
                                 size_t msgLen = (size_t)handleHeader(&buffer->recvHeader, sockfd);
-                                recvPacketNum++; /* 报文数加1 */
+                                g_recvPackets++; /* 报文数加1 */
                                 n                = n - buffer->unrecv;
                                 buffer->recved   = buffer->recved + buffer->unrecv;
                                 buffer->recvFlag = 1;
@@ -275,6 +319,7 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                     }
                 }
                 else if (n == 0) {
+                    g_recvFINs++;
                     logInfo(0, logfp, "PressureGenerator - client %d - receive FIN from server", sockfd);
                     if (clients[sockfd].state == 0) { /* 之前未关闭连接，则直接关闭写 */
                         shutdown(sockfd, SHUT_WR);
@@ -289,9 +334,13 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                 }
                 else {
                     if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
+                        g_recvError++;
                         logError(-1, logfp, "PressureGenerator - client %d - recv error", sockfd);
                         removeClient(sockfd);
                         continueFlag = 1;
+                    }
+                    else {
+                        g_recvEAGAIN++;
                     }
                     break; /* 读到没有数据了，退出 */
                 }
@@ -307,6 +356,7 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                 if (buffer->sended < sizeof(Header)) {
                     if (buffer->sended == 0) {
                         getHeader(payloadSize, sockfd, &buffer->sendHeader);
+                        g_sendPackets++;
                     }
                     n = send(sockfd, (char*)&buffer->sendHeader + buffer->sended, sizeof(Header) - buffer->sended, 0);
                 }
@@ -315,6 +365,8 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                              payloadSize - (buffer->sended - sizeof(Header)), 0);
                 }
                 if (n >= 0) {
+                    g_sendSuccess++;
+                    g_sendBytes += n;
                     buffer->sended += n;
                     if (buffer->sended == sizeof(Header) + payloadSize) {
                         buffer->sended = 0;
@@ -322,9 +374,13 @@ int PressureGenerator::handleEvents(struct epoll_event* events, const int& numbe
                 }
                 else { /* 遇到错误 */
                     if (errno != EWOULDBLOCK) {
+                        g_sendError++;
                         logError(-1, logfp, "PressureGenerator - client %d - send error", sockfd);
                         removeClient(sockfd);
                         continueFlag = 1;
+                    }
+                    else {
+                        g_sendEAGAIN++;
                     }
                     break; /* 写到不能写了，退出 */
                 }
@@ -390,52 +446,65 @@ uint16_t PressureGenerator::handleHeader(struct Header* header, const int& sockf
     struct timespec timestamp;
     timestamp.tv_sec  = ntoh64(header->sec);
     timestamp.tv_nsec = ntoh64(header->nsec);
+    if (timestamp.tv_nsec >= NANO_SEC) {
+        perror("receive time wrong");
+    }
     addDelay(&timestamp);
     // logInfo(0, logfp, "PressureGenerator - client %d - recv header: <length: %hd, id: %d, time: %s>", sockfd, msgLen,
     //         ntohl(header->id), strftTime(&timestamp).c_str());
     return msgLen;
 }
 
+// void PressureGenerator::addDelay(struct timespec* timestamp) {
+//     struct timespec timeNow;
+//     clock_gettime(CLOCK_REALTIME, &timeNow);
+//     assert(timestamp->tv_nsec < NANO_SEC);
+//     if (timeNow.tv_sec < timestamp->tv_sec) {
+//         return;
+//     }
+//     else if (timeNow.tv_sec == timestamp->tv_sec) {
+//         if (timeNow.tv_nsec < timestamp->tv_nsec) {
+//             return;
+//         }
+//         else {
+//             g_totalDelay.tv_nsec += (timeNow.tv_nsec - timestamp->tv_nsec);
+//             if (g_totalDelay.tv_nsec > NANO_SEC) {
+//                 g_totalDelay.tv_sec += g_totalDelay.tv_nsec / NANO_SEC;
+//                 g_totalDelay.tv_nsec %= NANO_SEC;
+//             }
+//         }
+//     }
+//     else {
+//         g_totalDelay.tv_sec += (timeNow.tv_sec - timestamp->tv_sec);
+//         if (timeNow.tv_nsec < timestamp->tv_nsec) {
+//             if (g_totalDelay.tv_nsec > (timestamp->tv_nsec - timeNow.tv_nsec)) {
+//                 g_totalDelay.tv_nsec -= (timestamp->tv_nsec - timeNow.tv_nsec);
+//             }
+//             else {
+//                 g_totalDelay.tv_nsec = NANO_SEC - ((timestamp->tv_nsec - timeNow.tv_nsec) - g_totalDelay.tv_nsec);
+//                 g_totalDelay.tv_sec--;
+//             }
+//         }
+//         else {
+//             g_totalDelay.tv_nsec += (timeNow.tv_nsec - timestamp->tv_nsec);
+//             if (g_totalDelay.tv_nsec > NANO_SEC) {
+//                 g_totalDelay.tv_sec += g_totalDelay.tv_nsec / NANO_SEC;
+//                 g_totalDelay.tv_nsec %= NANO_SEC;
+//             }
+//         }
+//     }
+// }
+
 void PressureGenerator::addDelay(struct timespec* timestamp) {
     struct timespec timeNow;
     clock_gettime(CLOCK_REALTIME, &timeNow);
-    if (timestamp->tv_nsec >= NANO_SEC) {
+    assert(timestamp->tv_nsec < NANO_SEC);
+    if (timestamp->tv_sec > timeNow.tv_sec
+        || (timestamp->tv_sec == timeNow.tv_sec && timestamp->tv_nsec > timeNow.tv_nsec)) {
         return;
     }
-    if (timeNow.tv_sec < timestamp->tv_sec) {
-        return;
-    }
-    else if (timeNow.tv_sec == timestamp->tv_sec) {
-        if (timeNow.tv_nsec < timestamp->tv_nsec) {
-            return;
-        }
-        else {
-            totalDelay.tv_nsec += (timeNow.tv_nsec - timestamp->tv_nsec);
-            if (totalDelay.tv_nsec > NANO_SEC) {
-                totalDelay.tv_sec += totalDelay.tv_nsec / NANO_SEC;
-                totalDelay.tv_nsec %= NANO_SEC;
-            }
-        }
-    }
-    else {
-        totalDelay.tv_sec += (timeNow.tv_sec - timestamp->tv_sec);
-        if (timeNow.tv_nsec < timestamp->tv_nsec) {
-            if (totalDelay.tv_nsec > (timestamp->tv_nsec - timeNow.tv_nsec)) {
-                totalDelay.tv_nsec -= (timestamp->tv_nsec - timeNow.tv_nsec);
-            }
-            else {
-                totalDelay.tv_nsec = NANO_SEC - ((timestamp->tv_nsec - timeNow.tv_nsec) - totalDelay.tv_nsec);
-                totalDelay.tv_sec--;
-            }
-        }
-        else {
-            totalDelay.tv_nsec += (timeNow.tv_nsec - timestamp->tv_nsec);
-            if (totalDelay.tv_nsec > NANO_SEC) {
-                totalDelay.tv_sec += totalDelay.tv_nsec / NANO_SEC;
-                totalDelay.tv_nsec %= NANO_SEC;
-            }
-        }
-    }
+    g_totalDelay += (double)(timeNow.tv_sec - timestamp->tv_sec) * 1000
+                    + (double)(timeNow.tv_nsec - timestamp->tv_nsec) / (NANO_SEC / 1000);
 }
 
 void PressureGenerator::prepareExit() {

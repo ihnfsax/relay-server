@@ -1,7 +1,7 @@
 #include "common.hpp"
 
 #define LOGGER_PRETTY_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
-#define LOGGER_PRETTY_MS_FORMAT ".%03d"
+#define LOGGER_PRETTY_MS_FORMAT ".%03ld"
 #define PACKET_TIME_FORMAT "%H:%M:%S "
 #define PACKET_US_FORMAT ".%06ld"
 
@@ -14,7 +14,8 @@ std::string prettyTime() {
     int  string_size = strftime(buffer, sizeof(buffer), LOGGER_PRETTY_TIME_FORMAT, time_info);
 
     auto dur = tp.time_since_epoch();
-    int  ms  = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(dur).count()) % 1000;
+    auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() % 1000;
+    assert(ms >= 0);
     string_size += std::snprintf(buffer + string_size, sizeof(buffer) - string_size, LOGGER_PRETTY_MS_FORMAT, ms);
 
     return std::string(buffer, buffer + string_size);
@@ -48,6 +49,7 @@ struct timespec getHeader(uint16_t length, uint32_t id, Header* header) {
     header->id     = htonl(id);
     struct timespec timestamp;
     clock_gettime(CLOCK_REALTIME, &timestamp);
+    assert(timestamp.tv_nsec < NANO_SEC);
     header->sec  = hton64(timestamp.tv_sec);
     header->nsec = hton64(timestamp.tv_nsec);
     return timestamp;
