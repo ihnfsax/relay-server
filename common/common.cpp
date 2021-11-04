@@ -160,6 +160,23 @@ void addfd(int epollfd, int fd, int enable_out, int enable_et) {
     epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
 }
 
+void modfd(int epollfd, int fd, int enalbeIn, int enableOut) {
+    if (enalbeIn == 0 && enableOut == 0)
+        return;
+    struct epoll_event event;
+    event.data.fd = fd;
+    if (enalbeIn) {
+        event.events = EPOLLIN;
+        event.events = enableOut ? event.events | EPOLLOUT : event.events;
+        epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
+        return;
+    }
+    event.events = EPOLLOUT;
+    epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
+}
+
+// 每个客户端有一个 epollIn 和一个 epollOut 变量
+
 void delfd(int epollfd, int fd) {
     epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
 }

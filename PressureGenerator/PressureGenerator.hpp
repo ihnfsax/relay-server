@@ -2,7 +2,7 @@
 #include <map>
 #include <string>
 
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 12000
 
 typedef void sigfunc(int);
 

@@ -172,120 +172,169 @@ int RelayServer::handleEvents(struct epoll_event* events, const int& number) {
             }
             if (peerC == nullptr) {
                 selfC->recved = 0;
-            }
-            if ((events[i].events & EPOLLIN) && (BUFFER_SIZE - selfC->recved) == 0) {
-                s_recvNoSpace++;
+                if (BETTER_EPOLL && selfC->epollIn == 0) {
+                    modfd(epollfd, selfC->connfd, 1, selfC->epollOut);
+                    selfC->epollIn = 1;
+                }
             }
             /* 有数据可读，并且有空间可存 */
-            if ((events[i].events & EPOLLIN) && (BUFFER_SIZE - selfC->recved) > 0) {
-                ssize_t n = recv(sockfd, selfC->usrBuf + selfC->recved, BUFFER_SIZE - selfC->recved, 0);
-                if (n > 0) {
-                    s_recvSuccess++;
-                    s_recvBytes += n;
-                    while (true) {
-                        /* 报头或载荷接收完毕 */
-                        if ((size_t)n >= selfC->unrecv) {
-                            // 处理报头
-                            if (selfC->recvFlag == 0) {
-                                memcpy((char*)&selfC->header + (sizeof(Header) - selfC->unrecv),
-                                       selfC->usrBuf + selfC->recved, selfC->unrecv);
-                                size_t msgLen = (size_t)handleHeader(&selfC->header, selfID);
-                                s_recvPackets++;
-                                n               = n - selfC->unrecv;
-                                selfC->recved   = selfC->recved + selfC->unrecv;
-                                selfC->recvFlag = 1;
-                                selfC->unrecv   = msgLen;
-                            }
-                            // 处理载荷
-                            else {
-                                if (peerC == nullptr) {
-                                    // writeMsgToFile(peerID, selfC->usrBuf + selfC->recved,
-                                    //                selfC->unrecv - 1); /* 不能把/0写进文件 */
-                                    // writeMsgToFile(peerID, "\n", 1);
-                                }
-                                n               = n - selfC->unrecv;
-                                selfC->recved   = selfC->recved + selfC->unrecv;
-                                selfC->recvFlag = 0;
-                                selfC->unrecv   = sizeof(Header);
-                            }
-                        }
-                        /* 只接受了一部分 */
-                        else {
-                            if (selfC->recvFlag == 0) {
-                                memcpy((char*)&selfC->header + (sizeof(Header) - selfC->unrecv),
-                                       selfC->usrBuf + selfC->recved, n);
-                            }
-                            else if (selfC->recvFlag == 1 && peerC == nullptr) {
-                                // writeMsgToFile(peerID, selfC->usrBuf + selfC->recved, n);
-                            }
-                            selfC->unrecv = selfC->unrecv - n;
-                            selfC->recved = selfC->recved + n;
-                            break;
-                        }
-                    }
+            if (events[i].events & EPOLLIN) {
+                // 如果没有空间接收数据
+                if (BUFFER_SIZE == selfC->recved) {
+                    s_recvNoSpace++;
                 }
-                else if (n == 0) {
-                    s_recvFINs++;
-                    logInfo(0, logfp, "RelayServer - client %d - receive FIN from client (id:%u)", selfID, selfC->id);
-                    if (selfC->state == 0) { /* 之前未关闭连接，则直接关闭写 */
-                        shutdown(sockfd, SHUT_WR);
-                    }
-                    else {
-                        shutdown(sockfd, SHUT_RD); /* 之前关闭了写，则把读关闭 */
-                    }
-                    /* 直接关闭写的一端，不再写了，因为数据可能源源不断地来，我们不知道还得写多少
-                     */
-                    removeClient(sockfd);
-                    continue; /* continue最外层的for */
-                }
+                // 如果有空间可接收数据
                 else {
-                    if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
-                        s_recvError++;
-                        logError(-1, logfp, "RelayServer - client %d - recv error (id:%u)", selfID, selfC->id);
+                    ssize_t n = recv(sockfd, selfC->usrBuf + selfC->recved, BUFFER_SIZE - selfC->recved, 0);
+                    if (n > 0) {
+                        s_recvSuccess++;
+                        s_recvBytes += n;
+                        while (true) {
+                            /* 报头或载荷接收完毕 */
+                            if ((size_t)n >= selfC->unrecv) {
+                                // 处理报头
+                                if (selfC->recvFlag == 0) {
+                                    memcpy((char*)&selfC->header + (sizeof(Header) - selfC->unrecv),
+                                           selfC->usrBuf + selfC->recved, selfC->unrecv);
+                                    size_t msgLen = (size_t)handleHeader(&selfC->header, selfID);
+                                    s_recvPackets++;
+                                    n               = n - selfC->unrecv;
+                                    selfC->recved   = selfC->recved + selfC->unrecv;
+                                    selfC->recvFlag = 1;
+                                    selfC->unrecv   = msgLen;
+                                }
+                                // 处理载荷
+                                else {
+                                    if (peerC == nullptr && SAVE_FILE) {
+                                        writeMsgToFile(peerID, selfC->usrBuf + selfC->recved,
+                                                       selfC->unrecv - 1); /* 不能把/0写进文件 */
+                                        writeMsgToFile(peerID, "\n", 1);
+                                    }
+                                    n               = n - selfC->unrecv;
+                                    selfC->recved   = selfC->recved + selfC->unrecv;
+                                    selfC->recvFlag = 0;
+                                    selfC->unrecv   = sizeof(Header);
+                                }
+                            }
+                            /* 只接受了一部分 */
+                            else {
+                                if (selfC->recvFlag == 0) {
+                                    memcpy((char*)&selfC->header + (sizeof(Header) - selfC->unrecv),
+                                           selfC->usrBuf + selfC->recved, n);
+                                }
+                                else if (selfC->recvFlag == 1 && peerC == nullptr && SAVE_FILE) {
+                                    writeMsgToFile(peerID, selfC->usrBuf + selfC->recved, n);
+                                }
+                                selfC->unrecv = selfC->unrecv - n;
+                                selfC->recved = selfC->recved + n;
+                                break;
+                            }
+                        }
+                    }
+                    else if (n == 0) {
+                        s_recvFINs++;
+                        logInfo(0, logfp, "RelayServer - client %d - receive FIN from client (id:%u)", selfID,
+                                selfC->id);
+                        if (selfC->state == 0) { /* 之前未关闭连接，则直接关闭写 */
+                            shutdown(sockfd, SHUT_WR);
+                        }
+                        else {
+                            shutdown(sockfd, SHUT_RD); /* 之前关闭了写，则把读关闭 */
+                        }
+                        /* 直接关闭写的一端，不再写了，因为数据可能源源不断地来，我们不知道还得写多少
+                         */
                         removeClient(sockfd);
                         continue; /* continue最外层的for */
                     }
                     else {
-                        s_recvEAGAIN++;
-                    }
-                }
-                if (peerC == nullptr) {
-                    selfC->recved = 0;
-                }
-            }
-            /* 有数据需要发送，并且能够发送，并且未关闭写 */
-            if ((events[i].events & EPOLLOUT) && selfC->state != 1) {
-                int isExist = 0;
-                // isExist     = copySavedMsg(selfC);
-                if (selfC->fakePeer != nullptr) {
-                    peerC = selfC->fakePeer;
-                }
-                if (peerC != nullptr && peerC->recved == 0) {
-                    s_sendNoData++;
-                }
-                if (peerC != nullptr && peerC->recved > 0) {
-                    ssize_t n = send(sockfd, peerC->usrBuf, peerC->recved, 0);
-                    if (n >= 0) {
-                        s_sendSuccess++;
-                        s_sendBytes += n;
-                        memcpy(peerC->usrBuf, peerC->usrBuf + n, peerC->recved - n);
-                        peerC->recved = peerC->recved - n;
-                    }
-                    else {
                         if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
-                            s_sendError++;
-                            logError(-1, logfp, "RelayServer - client %d - send error (id:%u)", selfID, selfC->id);
+                            s_recvError++;
+                            logError(-1, logfp, "RelayServer - client %d - recv error (id:%u)", selfID, selfC->id);
                             removeClient(sockfd);
                             continue; /* continue最外层的for */
                         }
                         else {
-                            s_sendEAGAIN++;
+                            s_recvEAGAIN++;
+                        }
+                    }
+                    if (peerC == nullptr) {
+                        selfC->recved = 0;
+                    }
+                }
+                // TEST
+                if (BETTER_EPOLL) {
+                    if (selfC->recved == BUFFER_SIZE) {
+                        modfd(epollfd, selfC->connfd, 0, selfC->epollOut);
+                        selfC->epollIn = 0;
+                    }
+                    if (peerC != nullptr && peerC->epollOut == 0 && selfC->recved > 0) {
+                        modfd(epollfd, peerC->connfd, peerC->epollIn, 1);
+                        peerC->epollOut = 1;
+                    }
+                }
+            }
+            int isExist = 0;
+            if (SAVE_FILE) {
+                isExist = copySavedMsg(selfC);
+                if (selfC->fakePeer != nullptr) {
+                    peerC = selfC->fakePeer;
+                    if (selfC->epollOut == 0 && peerC->recved > 0) {
+                        modfd(epollfd, selfC->connfd, selfC->epollIn, 1);
+                        selfC->epollOut = 1;
+                    }
+                }
+            }
+            /* 有数据需要发送，并且能够发送，并且未关闭写 */
+            if ((events[i].events & EPOLLOUT) && selfC->state != 1) {
+                if (peerC != nullptr) {
+                    // 无数据可发送
+                    if (peerC->recved == 0) {
+                        s_sendNoData++;
+                    }
+                    // 有数据可发送
+                    else {
+                        ssize_t n = send(sockfd, peerC->usrBuf, peerC->recved, 0);
+                        if (n >= 0) {
+                            s_sendSuccess++;
+                            s_sendBytes += n;
+                            memcpy(peerC->usrBuf, peerC->usrBuf + n, peerC->recved - n);
+                            peerC->recved = peerC->recved - n;
+                        }
+                        else {
+                            if (errno != EWOULDBLOCK) { /* 连接已经结束，直接close套接字 */
+                                s_sendError++;
+                                logError(-1, logfp, "RelayServer - client %d - send error (id:%u)", selfID, selfC->id);
+                                removeClient(sockfd);
+                                continue; /* continue最外层的for */
+                            }
+                            else {
+                                s_sendEAGAIN++;
+                            }
                         }
                     }
                 }
-                if (selfC->fakePeer != nullptr && selfC->fakePeer->recved == 0 && !isExist) {
-                    delete selfC->fakePeer;
-                    selfC->fakePeer = nullptr;
+                if (SAVE_FILE) {
+                    // 既没有匹配客户端的数据可发，也没有文件的数据可发
+                    if (selfC->fakePeer != nullptr && selfC->fakePeer->recved == 0 && !isExist) {
+                        delete selfC->fakePeer;
+                        selfC->fakePeer = nullptr;
+                        peerC           = nullptr;
+                    }
+                }
+                if (BETTER_EPOLL) {
+                    // 如果有匹配的客户端
+                    if (selfC->fakePeer == nullptr && peerC != nullptr) {
+                        // 可以接收新数据
+                        if (peerC->recved < BUFFER_SIZE && peerC->epollIn == 0) {
+                            modfd(epollfd, peerC->connfd, 1, peerC->epollOut);
+                            peerC->epollIn = 1;
+                        }
+                        // 没有数据可发
+                        if (peerC->recved == 0 && selfC->epollOut == 1) {
+                            modfd(epollfd, selfC->connfd, selfC->epollIn, 0);
+                            selfC->epollOut = 0;
+                        }
+                    }
                 }
             }
         }
@@ -318,7 +367,12 @@ int RelayServer::addClient(ClientInfo* client) {
     clientIDs[client->cliID]  = client;
     clientFDs[client->connfd] = client;
     updateNextID();
-    addfd(epollfd, client->connfd, 1, 0); /* 使用EPOLLIN | EPOLLOUT，启用LT模式 */
+    if (BETTER_EPOLL) {
+        addfd(epollfd, client->connfd, 0, 0);
+    }
+    else {
+        addfd(epollfd, client->connfd, 1, 0); /* 使用EPOLLIN | EPOLLOUT，启用LT模式 */
+    }
     logInfo(0, logfp, "RelayServer - client %d - new client (%zd in total)", client->cliID, clientFDs.size());
     return 0;
 }

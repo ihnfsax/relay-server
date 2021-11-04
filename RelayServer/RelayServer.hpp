@@ -2,8 +2,8 @@
 #include <map>
 #include <string>
 
-#define BUFFER_SIZE 8192 /* 服务器为每个客户端分配的用户缓冲区大小 */
-#define BACKLOG 128      /* listen队列总大小 */
+#define BUFFER_SIZE 12000 /* 服务器为每个客户端分配的用户缓冲区大小 */
+#define BACKLOG 128       /* listen队列总大小 */
 
 typedef struct ClientInfo {
     uint16_t    cliID;                     /* 客户ID（仅用于服务器区分客户端） */
@@ -16,6 +16,8 @@ typedef struct ClientInfo {
     ClientInfo* fakePeer = nullptr;        /* 用于保存文件内容假客户端 */
     int         state    = 0;              /* 0:未关闭套接字 1:已关闭写的一端 */
     uint32_t    id;                        /* 报文中的id，DEBUG用 */
+    int         epollIn  = 1;
+    int         epollOut = 0;
 } ClientInfo;
 
 typedef struct File {

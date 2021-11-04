@@ -23,6 +23,8 @@
 #include <wait.h>
 
 #define NANO_SEC 1000000000
+#define SAVE_FILE 0
+#define BETTER_EPOLL 0
 #define NAME_MAX 255                                       /* chars in a file name */
 #define LINE_MAX 255                                       /* char in one line of log file */
 #define MAX_EVENT_NUMBER 30000                             /* 事件数 */
@@ -91,3 +93,5 @@ void addfd(int epollfd, int fd, int enable_out, int enable_et);
 
 /* 将文件描述符从epoll事件表中删除 */
 void delfd(int epollfd, int fd);
+
+void modfd(int epollfd, int fd, int enalbeIn, int enableOut);
